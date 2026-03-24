@@ -1,0 +1,241 @@
+#!/usr/bin/env python
+"""
+Patient-level regressions between encoding coherence baseline connectivity and
+memory modulation (avg_stim_dprime_diff).
+
+Baseline functional connectivity measure:
+1. Within each patient and region pair, average post-stim encoding coherence
+   across all available encoding trials to get one mean spectrum.
+2. Collapse that mean spectrum across frequency by taking the mean over all
+   available post_Freq columns to obtain one scalar baseline FC value.
+3. For composite ROIs, first average the patient's mean spectra across source
+   BLA pairs, then take the frequency-average scalar.
+"""
+
+import os
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import matplotlib
+
+
+def running_in_notebook():
+    try:
+        from IPython import get_ipython
+        shell = get_ipython()
+        return shell is not None and shell.__class__.__name__ == 'ZMQInteractiveShell'
+    except Exception:
+        return False
+
+
+IN_NOTEBOOK = running_in_notebook()
+if not IN_NOTEBOOK:
+    matplotlib.use('Agg')
+
+import matplotlib.pyplot as plt
+from scipy import stats
+
+from combined_encoding_coherence import (
+    BLA_ALLHPC,
+    BLA_MTL,
+    build_bla_composite_data,
+    load_amme_encoding,
+    load_blaes_encoding,
+    merge_dicts,
+    merge_sets,
+)
+
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+OUTPUT_DIR = SCRIPT_DIR / "outputs" / "encoding_coherence_behavior_regressions"
+BEHAVIOR_CSV = SCRIPT_DIR / "AMMEBLAES_includedpts_firstsession_behavioral.csv"
+TARGET_COLUMN = "avg_stim_dprime_diff"
+SOURCE_ROIS = ["BLA_CA", "BLA_DG", "BLA_EC", "BLA_HPC", "BLA_PRC", BLA_ALLHPC, BLA_MTL]
+LOGIC_NOTE = (
+    "X-axis baseline FC: mean post_Freq encoding coherency across trials within patient and ROI, "
+    "then mean across frequencies. Composite ROIs average patient mean spectra across source BLA pairs "
+    "before the frequency-average scalar is taken. Y-axis memory modulation: avg_stim_dprime_diff."
+)
+
+
+def ensure_dir(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def load_all_encoding_data():
+    blaes = load_blaes_encoding()
+    amme = load_amme_encoding()
+    all_data = {
+        "group_all_power": merge_dicts(blaes["group_all_power"], amme["group_all_power"]),
+        "stim_power": merge_dicts(blaes["stim_power"], amme["stim_power"]),
+        "nostim_power": merge_dicts(blaes["nostim_power"], amme["nostim_power"]),
+        "bc_stim": merge_dicts(blaes["bc_stim"], amme["bc_stim"]),
+        "bc_nostim": merge_dicts(blaes["bc_nostim"], amme["bc_nostim"]),
+        "freqs_post": blaes["freqs_post"] if blaes["freqs_post"] is not None else amme["freqs_post"],
+        "freqs_diff": blaes["freqs_diff"] if blaes["freqs_diff"] is not None else amme["freqs_diff"],
+        "has_memory": False,
+        "use_memory_collapsed_overall": False,
+        "overall_plot_exclude_substrings": merge_sets(
+            blaes.get("overall_plot_exclude_substrings"),
+            amme.get("overall_plot_exclude_substrings"),
+        ),
+        "stim_plot_exclude_substrings": merge_sets(
+            blaes.get("stim_plot_exclude_substrings"),
+            amme.get("stim_plot_exclude_substrings"),
+        ),
+        "memory_plot_exclude_substrings": merge_sets(
+            blaes.get("memory_plot_exclude_substrings"),
+            amme.get("memory_plot_exclude_substrings"),
+        ),
+        "bc_plot_exclude_substrings": merge_sets(
+            blaes.get("bc_plot_exclude_substrings"),
+            amme.get("bc_plot_exclude_substrings"),
+        ),
+    }
+    composite_data = build_bla_composite_data(all_data)
+    return all_data, composite_data
+
+
+def build_baseline_fc_table(group_all_power):
+    rows = []
+    for roi, subj_dict in group_all_power.items():
+        for patient, spectrum in subj_dict.items():
+            arr = np.asarray(spectrum, dtype=np.float64)
+            if arr.size == 0:
+                continue
+            rows.append(
+                {
+                    "Patient": str(patient),
+                    "Region": roi,
+                    "baseline_fc": float(np.nanmean(arr)),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def load_behavior():
+    behavior = pd.read_csv(BEHAVIOR_CSV)
+    if "Patient" not in behavior.columns or TARGET_COLUMN not in behavior.columns:
+        raise ValueError(
+            f"Behavior CSV must contain 'Patient' and '{TARGET_COLUMN}' columns: {BEHAVIOR_CSV}"
+        )
+    behavior = behavior[["Patient", TARGET_COLUMN]].copy()
+    behavior["Patient"] = behavior["Patient"].astype(str)
+    behavior[TARGET_COLUMN] = pd.to_numeric(behavior[TARGET_COLUMN], errors="coerce")
+    return behavior.dropna(subset=[TARGET_COLUMN]).drop_duplicates(subset=["Patient"])
+
+
+def fit_regression(df):
+    result = stats.linregress(df["baseline_fc"], df[TARGET_COLUMN])
+    return {
+        "n": int(len(df)),
+        "slope": float(result.slope),
+        "intercept": float(result.intercept),
+        "r": float(result.rvalue),
+        "r_squared": float(result.rvalue ** 2),
+        "p_value": float(result.pvalue),
+        "stderr": float(result.stderr),
+        "intercept_stderr": float(result.intercept_stderr),
+    }
+
+
+def make_annotation(stats_row):
+    return "\n".join(
+        [
+            f"n = {stats_row['n']}",
+            f"slope = {stats_row['slope']:.4f}",
+            f"intercept = {stats_row['intercept']:.4f}",
+            f"r = {stats_row['r']:.3f}",
+            f"R^2 = {stats_row['r_squared']:.3f}",
+            f"p = {stats_row['p_value']:.4g}",
+        ]
+    )
+
+
+def plot_regression(df, stats_row, out_path: Path):
+    fig, ax = plt.subplots(figsize=(8.5, 6.5))
+    x = df["baseline_fc"].to_numpy(dtype=float)
+    y = df[TARGET_COLUMN].to_numpy(dtype=float)
+
+    ax.scatter(x, y, s=55, alpha=0.8, color="#1f4e79", edgecolors="white", linewidths=0.6)
+    order = np.argsort(x)
+    x_sorted = x[order]
+    y_fit = stats_row["intercept"] + stats_row["slope"] * x_sorted
+    ax.plot(x_sorted, y_fit, color="#b22222", linewidth=2)
+
+    ax.set_xlabel("Baseline Functional Connectivity", fontsize=13, fontweight="bold")
+    ax.set_ylabel("Memory Modulation (avg_stim_dprime_diff)", fontsize=13, fontweight="bold")
+    ax.set_title(f"Encoding Coherence vs Memory Modulation: {df['Region'].iloc[0]}", fontsize=15, fontweight="bold")
+    ax.tick_params(axis="both", labelsize=11)
+
+    ax.text(
+        0.98,
+        0.98,
+        make_annotation(stats_row),
+        transform=ax.transAxes,
+        ha="right",
+        va="top",
+        fontsize=10,
+        bbox=dict(boxstyle="round,pad=0.35", facecolor="white", alpha=0.9, edgecolor="#808080"),
+    )
+
+    fig.text(0.015, 0.015, LOGIC_NOTE, ha="left", va="bottom", fontsize=9, wrap=True)
+    fig.tight_layout(rect=[0, 0.08, 1, 1])
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    if IN_NOTEBOOK:
+        plt.show()
+    plt.close(fig)
+
+
+def main():
+    ensure_dir(OUTPUT_DIR)
+    behavior = load_behavior()
+    all_data, composite_data = load_all_encoding_data()
+
+    base_df = build_baseline_fc_table(all_data["group_all_power"])
+    composite_df = build_baseline_fc_table(composite_data["group_all_power"])
+    fc_df = pd.concat([base_df, composite_df], ignore_index=True)
+    fc_df = fc_df[fc_df["Region"].isin(SOURCE_ROIS)].copy()
+
+    joined = fc_df.merge(behavior, on="Patient", how="inner")
+    joined = joined.dropna(subset=["baseline_fc", TARGET_COLUMN]).copy()
+    if joined.empty:
+        raise RuntimeError("No overlapping patients between encoding coherence and behavioral memory-modulation data.")
+
+    detail_dir = ensure_dir(OUTPUT_DIR / "plots")
+    summary_rows = []
+
+    for roi in SOURCE_ROIS:
+        roi_df = joined[joined["Region"] == roi].copy()
+        roi_df = roi_df.drop_duplicates(subset=["Patient"])
+        if len(roi_df) < 3 or roi_df["baseline_fc"].nunique() < 2:
+            continue
+
+        stats_row = fit_regression(roi_df)
+        stats_row["Region"] = roi
+        summary_rows.append(stats_row)
+
+        roi_csv = detail_dir / f"{roi}_baseline_fc_vs_memory_modulation.csv"
+        roi_df.sort_values("Patient").to_csv(roi_csv, index=False)
+        plot_regression(roi_df, stats_row, detail_dir / f"{roi}_baseline_fc_vs_memory_modulation.png")
+
+    if not summary_rows:
+        raise RuntimeError("No regressions could be fit; check patient overlap and baseline connectivity variability.")
+
+    summary_df = pd.DataFrame(summary_rows)[
+        ["Region", "n", "slope", "intercept", "r", "r_squared", "p_value", "stderr", "intercept_stderr"]
+    ].sort_values("Region")
+    summary_df.to_csv(OUTPUT_DIR / "encoding_coherence_behavior_regression_summary.csv", index=False)
+    joined.sort_values(["Region", "Patient"]).to_csv(
+        OUTPUT_DIR / "encoding_coherence_behavior_regression_joined_data.csv",
+        index=False,
+    )
+    (OUTPUT_DIR / "logic.txt").write_text(LOGIC_NOTE + "\n", encoding="utf-8")
+
+    print(f"Wrote regression outputs to: {OUTPUT_DIR}")
+
+
+if __name__ == "__main__":
+    main()
