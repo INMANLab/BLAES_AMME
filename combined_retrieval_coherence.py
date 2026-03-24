@@ -59,8 +59,8 @@ RESPONDER_PALETTE = {
 }
 
 CONNECTED_DOT_ROI_ORDER = [
-    'BLA_EC', 'BLA_HPC', 'BLA_PRC', 'CA_BLA', 'CA_EC', 'CA_PRC', 'EC_PRC',
-    'HPC_EC', 'HPC_PRC', 'BLA_DG', 'CA_DG', 'PRC_DG', 'EC_DG',
+    'BLA_CA', 'BLA_DG', 'BLA_EC', 'BLA_HPC', 'BLA_PRC', 'CA_DG', 'CA_EC',
+    'CA_PRC', 'DG_EC', 'DG_PRC', 'EC_HPC', 'EC_PRC', 'HPC_PRC',
 ]
 
 AMME_RETRIEVAL_REGION_EXCLUSIONS = {
@@ -70,6 +70,9 @@ AMME_RETRIEVAL_REGION_EXCLUSIONS = {
 }
 
 _RESPONDER_STATUS_MAP = None
+REGION_RENAMES = {
+    'ER': 'EC',
+}
 
 
 # =========================================================================
@@ -78,8 +81,53 @@ _RESPONDER_STATUS_MAP = None
 
 def fix_region(df):
     df = df.copy()
-    df['Region'] = df['Region'].replace('ER', 'EC')
+    df['Region'] = df['Region'].map(normalize_region_label)
     return df
+
+def normalize_region_label(value):
+    if pd.isna(value):
+        return value
+    parts = [part.strip() for part in str(value).split('_') if part.strip()]
+    if not parts:
+        return np.nan
+    parts = [REGION_RENAMES.get(part, part) for part in parts]
+    if len(parts) == 2:
+        parts = sorted(parts)
+    return '_'.join(parts)
+
+def canonicalize_power_dict(power_dict):
+    canonical = {}
+    for region, subj_dict in (power_dict or {}).items():
+        region_name = normalize_region_label(region)
+        if pd.isna(region_name):
+            continue
+        target = canonical.setdefault(region_name, {})
+        for subject, values in subj_dict.items():
+            arr = np.asarray(values, dtype=np.float64)
+            if subject in target:
+                target[subject] = np.nanmean(np.vstack([target[subject], arr]), axis=0)
+            else:
+                target[subject] = arr
+    return canonical
+
+def canonicalize_export_frames(frames):
+    canonical_frames = []
+    for frame in frames or []:
+        df = frame.copy()
+        if 'Region' in df.columns:
+            df['Region'] = df['Region'].map(normalize_region_label)
+            df = df.drop_duplicates()
+        canonical_frames.append(df)
+    return canonical_frames
+
+def canonicalize_coherence_data(data):
+    canonicalized = data.copy()
+    for key, value in data.items():
+        if isinstance(value, dict) and (not value or all(isinstance(subvalue, dict) for subvalue in value.values())):
+            canonicalized[key] = canonicalize_power_dict(value)
+    if 'mlmr_export_frames' in data:
+        canonicalized['mlmr_export_frames'] = canonicalize_export_frames(data.get('mlmr_export_frames'))
+    return canonicalized
 
 def apply_subject_region_exclusions(df, exclude_map):
     if not exclude_map or 'Patient' not in df.columns or 'Region' not in df.columns:
@@ -331,11 +379,12 @@ def build_trial_level_mlmr_export(df, diff_cols, measure_name='Coherence', exclu
 
     base_cols = ['Measure', 'Patient', 'Region', 'trial_type', 'yes_or_no']
     export_df = df.copy()
+    export_df['Region'] = export_df['Region'].map(normalize_region_label)
     export_df['Measure'] = measure_name
     export_df = export_df[base_cols + diff_cols]
     if excluded_substrings:
         export_df = filter_region_df_by_substrings(export_df, excluded_substrings)
-    return export_df.sort_values(base_cols).reset_index(drop=True)
+    return export_df.drop_duplicates().sort_values(base_cols).reset_index(drop=True)
 
 
 def build_retrieval_mlmr_export(data, measure_name='Coherence'):
@@ -347,10 +396,11 @@ def build_retrieval_mlmr_export(data, measure_name='Coherence'):
     if df_export.empty:
         return df_export
 
+    df_export['Region'] = df_export['Region'].map(normalize_region_label)
     df_export['Measure'] = measure_name
     base_cols = ['Measure', 'Patient', 'Region', 'trial_type', 'yes_or_no']
     freq_cols = sorted_freq_cols(df_export, 'diff_Freq_')
-    return df_export[base_cols + freq_cols].sort_values(base_cols).reset_index(drop=True)
+    return df_export[base_cols + freq_cols].drop_duplicates().sort_values(base_cols).reset_index(drop=True)
 
 
 def export_retrieval_mlmr_csv(data, csv_dir, file_stem, measure_name='Coherence'):
@@ -574,7 +624,7 @@ def load_blaes_retrieval():
                 if k:
                     data[k].setdefault(row['Region'], {})[row['Patient']] = row[diff_cols].values.astype(np.float64)
 
-    return data
+    return canonicalize_coherence_data(data)
 
 
 # =========================================================================
@@ -607,7 +657,7 @@ def load_amme_retrieval():
     }
 
     for file in power_files:
-        df = pd.read_csv(file)
+        df = fix_region(pd.read_csv(file))
         if 'Patient' not in df.columns or 'Region' not in df.columns:
             continue
 
@@ -692,7 +742,7 @@ def load_amme_retrieval():
                 if k:
                     data[k].setdefault(row['Region'], {})[row['Patient']] = row[diff_cols].values.astype(np.float64)
 
-    return data
+    return canonicalize_coherence_data(data)
 
 
 # =========================================================================
@@ -1414,6 +1464,7 @@ if __name__ == '__main__':
             for df in blaes.get('mlmr_export_frames', []) + amme.get('mlmr_export_frames', [])
         ],
     }
+    all_data = canonicalize_coherence_data(all_data)
 
     print("\nExporting retrieval MLMR CSVs...")
     ensure_dir(CSV_OUTPUT_DIR)

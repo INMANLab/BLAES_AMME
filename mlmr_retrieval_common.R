@@ -28,6 +28,31 @@ display_region_name <- function(region) {
   gsub("_", " - ", region, fixed = TRUE)
 }
 
+normalize_region_label <- function(region) {
+  if (is.na(region)) {
+    return(NA_character_)
+  }
+
+  parts <- strsplit(trimws(region), "_", fixed = TRUE)[[1]]
+  parts <- trimws(parts)
+  parts <- parts[nzchar(parts)]
+
+  if (length(parts) == 0) {
+    return(NA_character_)
+  }
+
+  parts[parts == "ER"] <- "EC"
+  if (length(parts) == 2) {
+    parts <- sort(parts)
+  }
+
+  paste(parts, collapse = "_")
+}
+
+normalize_region_labels <- function(regions) {
+  vapply(regions, normalize_region_label, character(1), USE.NAMES = FALSE)
+}
+
 format_p_value <- function(x) {
   ifelse(is.na(x), "", ifelse(x < 0.001, "<0.001", sprintf("%.3f", x)))
 }
@@ -63,6 +88,8 @@ prepare_model_data <- function(input_csv) {
   if (length(diff_cols) == 0) {
     stop(sprintf("No diff_Freq_ columns found in %s", input_csv))
   }
+
+  dat$Region <- normalize_region_labels(dat$Region)
 
   dat <- dat %>%
     mutate(
