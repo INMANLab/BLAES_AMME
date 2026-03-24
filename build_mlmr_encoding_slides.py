@@ -19,7 +19,8 @@ def ensure_dir(path: Path) -> Path:
 
 def read_manifest(path: Path, measure_name: str):
     if not path.exists():
-        raise FileNotFoundError(f"Manifest not found: {path}")
+        print(f"Skipping {measure_name} slides input; manifest not found: {path}")
+        return []
     rows = []
     with path.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
