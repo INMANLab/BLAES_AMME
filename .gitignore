@@ -1,0 +1,8 @@
+*.pdf
+*.csv
+outputs/
+.DS_Store
+.claude
+*.pyc
+to_combine/
+*.png
