@@ -57,6 +57,16 @@ RESPONDER_PALETTE = {
     'Anti-responders': '#F79B62',
     'Unknown': '#7F7F7F',
 }
+BLA_ALLHPC = 'BLA_ALLHPC'
+BLA_MTL = 'BLA_MTL'
+COMPOSITE_ROIS = [BLA_ALLHPC, BLA_MTL]
+ALLHPC_PARTNERS = {'CA', 'DG', 'HPC'}
+COMPOSITE_LOGIC_TEXT = (
+    'Composite logic: average trial-level coherency within each original BLA pair for each '
+    'patient and condition, then average those spectra across available source pairs '
+    '(BLA-CA/BLA-DG/BLA-HPC for BLA_ALLHPC; all available BLA-to-non-BLA pairs for BLA_MTL). '
+    'Band means and Stim-NoStim or memory contrasts are computed after the composite spectrum is formed.'
+)
 
 BLAES_ENCODING_REGION_EXCLUSIONS = {
     'BLA': {'BJH042', 'BJH029'},
@@ -92,6 +102,14 @@ def normalize_region_label(value):
         parts = sorted(parts)
     return '_'.join(parts)
 
+def bla_partner_region(roi):
+    if pd.isna(roi):
+        return None
+    parts = [part.strip() for part in str(roi).split('_') if part.strip()]
+    if len(parts) != 2 or 'BLA' not in parts:
+        return None
+    return parts[0] if parts[1] == 'BLA' else parts[1]
+
 def canonicalize_power_dict(power_dict):
     canonical = {}
     for region, subj_dict in (power_dict or {}).items():
@@ -125,6 +143,64 @@ def canonicalize_coherence_data(data):
     if 'mlmr_export_frames' in data:
         canonicalized['mlmr_export_frames'] = canonicalize_export_frames(data.get('mlmr_export_frames'))
     return canonicalized
+
+def build_bla_composite_region_dict(region_dict, excluded_substrings=None):
+    composites = {roi: {} for roi in COMPOSITE_ROIS}
+    for roi, subj_dict in (region_dict or {}).items():
+        roi = normalize_region_label(roi)
+        if roi in COMPOSITE_ROIS or roi_has_excluded_substring(roi, excluded_substrings):
+            continue
+        partner = bla_partner_region(roi)
+        if partner is None:
+            continue
+        for subject, values in subj_dict.items():
+            arr = np.asarray(values, dtype=np.float64)
+            composites[BLA_MTL].setdefault(subject, []).append(arr)
+            if partner in ALLHPC_PARTNERS:
+                composites[BLA_ALLHPC].setdefault(subject, []).append(arr)
+
+    collapsed = {}
+    for composite_roi, subj_dict in composites.items():
+        for subject, vecs in subj_dict.items():
+            collapsed.setdefault(composite_roi, {})[subject] = np.nanmean(np.vstack(vecs), axis=0)
+    return collapsed
+
+def build_bla_composite_data(data):
+    composite_data = {
+        'freqs_post': data.get('freqs_post'),
+        'freqs_diff': data.get('freqs_diff'),
+        'has_memory': data.get('has_memory', False),
+        'use_memory_collapsed_overall': data.get('use_memory_collapsed_overall', False),
+        'overall_plot_exclude_substrings': set(),
+        'stim_plot_exclude_substrings': set(),
+        'memory_plot_exclude_substrings': set(),
+        'bc_plot_exclude_substrings': set(),
+        'overall_patient_exclude_subjects': data.get('overall_patient_exclude_subjects', set()),
+        'mlmr_export_frames': [],
+    }
+
+    post_key_exclusions = {
+        'group_all_power': data.get('overall_plot_exclude_substrings', set()),
+        'stim_power': data.get('stim_plot_exclude_substrings', set()),
+        'nostim_power': data.get('stim_plot_exclude_substrings', set()),
+        'stim_rem': data.get('memory_plot_exclude_substrings', set()),
+        'stim_forg': data.get('memory_plot_exclude_substrings', set()),
+        'nostim_rem': data.get('memory_plot_exclude_substrings', set()),
+        'nostim_forg': data.get('memory_plot_exclude_substrings', set()),
+    }
+    diff_key_exclusions = {
+        'bc_stim': data.get('bc_plot_exclude_substrings', set()),
+        'bc_nostim': data.get('bc_plot_exclude_substrings', set()),
+        'bc_stim_rem': data.get('bc_plot_exclude_substrings', set()),
+        'bc_stim_forg': data.get('bc_plot_exclude_substrings', set()),
+        'bc_nostim_rem': data.get('bc_plot_exclude_substrings', set()),
+        'bc_nostim_forg': data.get('bc_plot_exclude_substrings', set()),
+    }
+
+    for key, excluded_substrings in {**post_key_exclusions, **diff_key_exclusions}.items():
+        composite_data[key] = build_bla_composite_region_dict(data.get(key, {}), excluded_substrings)
+
+    return composite_data
 
 def apply_subject_region_exclusions(df, exclude_map):
     if not exclude_map or 'Patient' not in df.columns or 'Region' not in df.columns:
@@ -285,14 +361,33 @@ def plot_responder_status_bargraph(df_collapsed, out_dir, title, ylabel, filenam
                 fontsize=14,
                 title_fontsize=16,
             )
-        fig.tight_layout(rect=[0, 0, 1, 0.83])
-        fig.savefig(os.path.join(out_dir, band_filename(filename, band)), dpi=300, bbox_inches='tight')
-        finalize_figure(fig)
+        save_figure_output(
+            fig,
+            os.path.join(out_dir, band_filename(filename, band)),
+            footer_text=caption_text,
+            rect=[0, 0, 1, 0.83],
+        )
 
 def finalize_figure(fig=None):
     if IN_NOTEBOOK:
         plt.show()
     plt.close(fig)
+
+def save_figure_output(fig, path, footer_text=None, rect=None, dpi=300, bbox_inches='tight'):
+    layout_rect = rect
+    if footer_text:
+        if layout_rect is None:
+            layout_rect = [0, 0.09, 1, 1]
+        else:
+            layout_rect = [layout_rect[0], max(layout_rect[1], 0.09), layout_rect[2], layout_rect[3]]
+    if layout_rect is not None:
+        fig.tight_layout(rect=layout_rect)
+    else:
+        fig.tight_layout()
+    if footer_text:
+        fig.text(0.012, 0.012, footer_text, ha='left', va='bottom', fontsize=9, wrap=True)
+    fig.savefig(path, dpi=dpi, bbox_inches=bbox_inches)
+    finalize_figure(fig)
 
 def reset_dir(path):
     if os.path.exists(path):
@@ -739,7 +834,7 @@ def load_amme_encoding():
 #  PLOTTING FUNCTIONS - COMMON (non-memory)
 # =========================================================================
 
-def plot_power_by_roi(data, out_dir, label):
+def plot_power_by_roi(data, out_dir, label, filename='GroupCoherency_byROI_encoding.png', footer_text=None):
     gap = get_overall_power_for_plot(data)
     freqs = data['freqs_post']
     if not gap or freqs is None:
@@ -760,12 +855,15 @@ def plot_power_by_roi(data, out_dir, label):
     ax.set_title(f'{label} Encoding Group Coherency by ROI', fontsize=20, fontweight='bold')
     ax.tick_params(axis='both', labelsize=14)
     ax.legend(bbox_to_anchor=(1.02, 0.5), loc='center left', prop={'weight': 'bold', 'size': 12})
-    plt.tight_layout(rect=[0, 0, 0.85, 1])
-    plt.savefig(os.path.join(out_dir, 'GroupCoherency_byROI_encoding.png'), dpi=300, bbox_inches='tight')
-    finalize_figure()
+    save_figure_output(
+        fig,
+        os.path.join(out_dir, filename),
+        footer_text=footer_text,
+        rect=[0, 0, 0.85, 1],
+    )
 
 
-def plot_power_by_patient(data, out_dir, label):
+def plot_power_by_patient(data, out_dir, label, filename='GroupCoherency_byPatient_encoding.png', footer_text=None):
     gap = get_overall_power_for_plot(data)
     freqs = data['freqs_post']
     if not gap or freqs is None:
@@ -793,12 +891,15 @@ def plot_power_by_patient(data, out_dir, label):
     ax.set_title(f'{label} Encoding Group Coherency by Patient', fontsize=20, fontweight='bold')
     ax.tick_params(axis='both', labelsize=14)
     ax.legend(bbox_to_anchor=(1.02, 0.5), loc='center left', prop={'weight': 'bold', 'size': 12})
-    plt.tight_layout(rect=[0, 0, 0.82, 1])
-    plt.savefig(os.path.join(out_dir, 'GroupCoherency_byPatient_encoding.png'), dpi=300, bbox_inches='tight')
-    finalize_figure()
+    save_figure_output(
+        fig,
+        os.path.join(out_dir, filename),
+        footer_text=footer_text,
+        rect=[0, 0, 0.82, 1],
+    )
 
 
-def plot_stim_vs_nostim(data, out_dir, label):
+def plot_stim_vs_nostim(data, out_dir, label, filename='GroupCoherency_byROI_encoding_stim_vs_nostim.png', footer_text=None):
     freqs = data['freqs_post']
     sp, nsp = data['stim_power'], data['nostim_power']
     if not sp or not nsp or freqs is None:
@@ -823,12 +924,21 @@ def plot_stim_vs_nostim(data, out_dir, label):
     axes[0].set_ylabel('Coherency (dB)', fontsize=16, fontweight='bold')
     axes[1].legend(bbox_to_anchor=(1.02, 0.5), loc='center left', prop={'weight': 'bold', 'size': 11})
     fig.suptitle(f'{label} Encoding Group Coherency: No Stim vs Stim', fontsize=20, fontweight='bold')
-    plt.tight_layout(rect=[0, 0, 0.88, 0.95])
-    plt.savefig(os.path.join(out_dir, 'GroupCoherency_byROI_encoding_stim_vs_nostim.png'), dpi=300, bbox_inches='tight')
-    finalize_figure()
+    save_figure_output(
+        fig,
+        os.path.join(out_dir, filename),
+        footer_text=footer_text,
+        rect=[0, 0, 0.88, 0.95],
+    )
 
 
-def plot_per_roi_patient_stim_nostim(data, out_dir, label):
+def plot_per_roi_patient_stim_nostim(
+    data,
+    out_dir,
+    label,
+    filename_template='GroupCoherency_{roi}_byPatient_encoding_stim_vs_nostim.png',
+    footer_text=None,
+):
     freqs = data['freqs_post']
     sp, nsp = data['stim_power'], data['nostim_power']
     if not sp or not nsp or freqs is None:
@@ -858,12 +968,24 @@ def plot_per_roi_patient_stim_nostim(data, out_dir, label):
             if handles:
                 fig.legend(handles, labels_, bbox_to_anchor=(0.88, 0.5), loc='center left',
                            prop={'weight': 'bold', 'size': 10})
-            plt.tight_layout(rect=[0, 0, 0.82, 0.95])
-            plt.savefig(os.path.join(out_dir, f'GroupCoherency_{roi}_byPatient_encoding_stim_vs_nostim.png'), dpi=300, bbox_inches='tight')
-        finalize_figure()
+            save_figure_output(
+                fig,
+                os.path.join(out_dir, filename_template.format(roi=roi)),
+                footer_text=footer_text,
+                rect=[0, 0, 0.82, 0.95],
+            )
+        else:
+            finalize_figure(fig)
 
 
-def plot_bc_bar_graph(data, out_dir, label):
+def plot_bc_bar_graph(
+    data,
+    out_dir,
+    label,
+    filename='Bargraph_baseline_corrected_coherencyDiff_byROI_encoding.png',
+    responder_filename='Bargraph_baseline_corrected_coherencyDiff_byROI_encoding_responder_status.png',
+    footer_text=None,
+):
     freqs = data['freqs_diff']
     bcs, bcn = data['bc_stim'], data['bc_nostim']
     if not bcs or not bcn or freqs is None:
@@ -902,22 +1024,34 @@ def plot_bc_bar_graph(data, out_dir, label):
         ax.axhline(0, linestyle='-', color='grey')
         fig.suptitle(f'{label} Encoding Baseline-Corrected Coherency Diff (Stim - No Stim) - {band}',
                      fontsize=20, fontweight='bold', y=0.98)
-        fig.tight_layout(rect=[0, 0, 1, 0.95])
-        plt.savefig(os.path.join(out_dir, band_filename('Bargraph_baseline_corrected_coherencyDiff_byROI_encoding.png', band)),
-                    bbox_inches='tight', dpi=300)
-        finalize_figure()
+        save_figure_output(
+            fig,
+            os.path.join(out_dir, band_filename(filename, band)),
+            footer_text=footer_text,
+            rect=[0, 0, 1, 0.95],
+        )
     plot_responder_status_bargraph(
         df_diff[df_diff['Region'].isin(unique_rois)],
         out_dir,
         f'{label} Encoding Baseline-Corrected Coherency Diff (Stim - No Stim)',
         'Baseline-Corrected Coherency Diff',
-        'Bargraph_baseline_corrected_coherencyDiff_byROI_encoding_responder_status.png',
+        responder_filename,
         rotate_xticks=True,
-        caption_text='Method: For each patient and region pair, baseline-corrected spectra are averaged across all stim trials and all no-stim trials separately, band means are computed, then Stim-NoStim is taken. Bars = mean across patients, error bars = SEM, dots = patient values colored by responder-status CSV.',
+        caption_text=footer_text or (
+            'Method: For each patient and region pair, baseline-corrected spectra are averaged across all '
+            'stim trials and all no-stim trials separately, band means are computed, then Stim-NoStim is taken. '
+            'Bars = mean across patients, error bars = SEM, dots = patient values colored by responder-status CSV.'
+        ),
     )
 
 
-def plot_bc_per_roi(data, out_dir, label):
+def plot_bc_per_roi(
+    data,
+    out_dir,
+    label,
+    filename_template='{roi}_BaselineCorrectedCoherency_encoding_stim_vs_nostim.png',
+    footer_text=None,
+):
     freqs = data['freqs_diff']
     bcs, bcn = data['bc_stim'], data['bc_nostim']
     if freqs is None:
@@ -942,16 +1076,18 @@ def plot_bc_per_roi(data, out_dir, label):
         ax.tick_params(axis='both', labelsize=14)
         ax.set_xlim(1, 100)
         ax.legend(fontsize=12)
-        plt.tight_layout()
-        plt.savefig(os.path.join(out_dir, f'{roi}_BaselineCorrectedCoherency_encoding_stim_vs_nostim.png'), dpi=300)
-        finalize_figure()
+        save_figure_output(
+            fig,
+            os.path.join(out_dir, filename_template.format(roi=roi)),
+            footer_text=footer_text,
+        )
 
 
 # =========================================================================
 #  PLOTTING FUNCTIONS - MEMORY SPECIFIC
 # =========================================================================
 
-def plot_quadrant_stim_memory(data, out_dir, label):
+def plot_quadrant_stim_memory(data, out_dir, label, filename='Quadrant_StimMemory_Coherency_encoding.png', footer_text=None):
     freqs = data['freqs_post']
     if freqs is None:
         return
@@ -1000,12 +1136,22 @@ def plot_quadrant_stim_memory(data, out_dir, label):
     handles, labels_ = collect_unique_legend_items(axes_flat)
     fig.legend(handles, labels_, bbox_to_anchor=(0.82, 0.5), loc='center left',
                prop={'weight': 'bold', 'size': 12})
-    plt.tight_layout(rect=[0.06, 0.06, 0.82, 0.94])
-    plt.savefig(os.path.join(out_dir, 'Quadrant_StimMemory_Coherency_encoding.png'), dpi=300)
-    finalize_figure()
+    save_figure_output(
+        fig,
+        os.path.join(out_dir, filename),
+        footer_text=footer_text,
+        rect=[0.06, 0.06, 0.82, 0.94],
+        bbox_inches='tight',
+    )
 
 
-def plot_per_roi_quadrant(data, out_dir, label):
+def plot_per_roi_quadrant(
+    data,
+    out_dir,
+    label,
+    filename_template='IndivQuadrant_{roi}_StimMemory_encoding.png',
+    footer_text=None,
+):
     freqs = data['freqs_post']
     if freqs is None:
         return
@@ -1046,12 +1192,22 @@ def plot_per_roi_quadrant(data, out_dir, label):
         handles, labels_ = collect_unique_legend_items(axes.flatten())
         if handles:
             fig.legend(handles, labels_, loc='center left', bbox_to_anchor=(0.88, 0.5), fontsize=8)
-        plt.tight_layout(rect=[0.06, 0.06, 0.84, 0.92])
-        plt.savefig(os.path.join(out_dir, f'IndivQuadrant_{roi}_StimMemory_encoding.png'), dpi=300)
-        finalize_figure()
+        save_figure_output(
+            fig,
+            os.path.join(out_dir, filename_template.format(roi=roi)),
+            footer_text=footer_text,
+            rect=[0.06, 0.06, 0.84, 0.92],
+            bbox_inches='tight',
+        )
 
 
-def plot_bc_bar_by_memory(data, out_dir, label):
+def plot_bc_bar_by_memory(
+    data,
+    out_dir,
+    label,
+    filename_template='Bargraph_Coherency_diff_{mem}_encoding.png',
+    footer_text=None,
+):
     freqs = data['freqs_diff']
     if freqs is None:
         return
@@ -1101,13 +1257,21 @@ def plot_bc_bar_by_memory(data, out_dir, label):
             ax.axhline(0, color='grey')
             fig.suptitle(f'{label} Encoding Coherency Diff, {mem_label} Trials - {band}',
                          fontsize=20, fontweight='bold', y=0.98)
-            fig.tight_layout(rect=[0, 0, 1, 0.95])
-            plt.savefig(os.path.join(out_dir, band_filename(f'Bargraph_Coherency_diff_{mem}_encoding.png', band)),
-                        bbox_inches='tight', dpi=300)
-            finalize_figure()
+            save_figure_output(
+                fig,
+                os.path.join(out_dir, band_filename(filename_template.format(mem=mem), band)),
+                footer_text=footer_text,
+                rect=[0, 0, 1, 0.95],
+            )
 
 
-def plot_bc_remembered_forgotten(data, out_dir, label):
+def plot_bc_remembered_forgotten(
+    data,
+    out_dir,
+    label,
+    filename_template='{roi}_Baseline_Adjusted_Coherency_RememberedForgotten_encoding.png',
+    footer_text=None,
+):
     freqs = data['freqs_diff']
     if freqs is None:
         return
@@ -1143,9 +1307,106 @@ def plot_bc_remembered_forgotten(data, out_dir, label):
         handles, labels_ = axes[0].get_legend_handles_labels()
         fig.legend(handles, labels_, loc='center left', bbox_to_anchor=(0.90, 0.5), fontsize=12)
         fig.suptitle(f'{label} Encoding {roi} Baseline-Corrected Coherency', fontsize=18, fontweight='bold')
-        plt.tight_layout(rect=[0, 0, 0.92, 0.94])
-        plt.savefig(os.path.join(out_dir, f'{roi}_Baseline_Adjusted_Coherency_RememberedForgotten_encoding.png'), dpi=300)
-        finalize_figure()
+        save_figure_output(
+            fig,
+            os.path.join(out_dir, filename_template.format(roi=roi)),
+            footer_text=footer_text,
+            rect=[0, 0, 0.92, 0.94],
+            bbox_inches='tight',
+        )
+
+
+def write_bla_composite_logic_note(out_dir):
+    note_path = os.path.join(out_dir, 'BLAComposite_logic.txt')
+    with open(note_path, 'w', encoding='utf-8') as handle:
+        handle.write(COMPOSITE_LOGIC_TEXT + '\n')
+    return note_path
+
+
+def generate_bla_composite_plots(data, out_dir, label):
+    composite_data = build_bla_composite_data(data)
+    has_composites = any(composite_data.get(key) for key in [
+        'group_all_power', 'stim_power', 'nostim_power', 'bc_stim', 'bc_nostim',
+        'stim_rem', 'stim_forg', 'nostim_rem', 'nostim_forg',
+        'bc_stim_rem', 'bc_stim_forg', 'bc_nostim_rem', 'bc_nostim_forg',
+    ])
+    if not has_composites:
+        return
+
+    write_bla_composite_logic_note(out_dir)
+    print(f"  Generating BLA composite plots for {label}...")
+    plot_power_by_roi(
+        composite_data,
+        out_dir,
+        f'{label} BLA Composite',
+        filename='BLAComposite_GroupCoherency_byROI_encoding.png',
+        footer_text=COMPOSITE_LOGIC_TEXT,
+    )
+    plot_power_by_patient(
+        composite_data,
+        out_dir,
+        f'{label} BLA Composite',
+        filename='BLAComposite_GroupCoherency_byPatient_encoding.png',
+        footer_text=COMPOSITE_LOGIC_TEXT,
+    )
+    plot_stim_vs_nostim(
+        composite_data,
+        out_dir,
+        f'{label} BLA Composite',
+        filename='BLAComposite_GroupCoherency_byROI_encoding_stim_vs_nostim.png',
+        footer_text=COMPOSITE_LOGIC_TEXT,
+    )
+    plot_per_roi_patient_stim_nostim(
+        composite_data,
+        out_dir,
+        f'{label} BLA Composite',
+        filename_template='BLAComposite_{roi}_byPatient_encoding_stim_vs_nostim.png',
+        footer_text=COMPOSITE_LOGIC_TEXT,
+    )
+    plot_bc_bar_graph(
+        composite_data,
+        out_dir,
+        f'{label} BLA Composite',
+        filename='BLAComposite_Bargraph_baseline_corrected_coherencyDiff_byROI_encoding.png',
+        responder_filename='BLAComposite_Bargraph_baseline_corrected_coherencyDiff_byROI_encoding_responder_status.png',
+        footer_text=COMPOSITE_LOGIC_TEXT,
+    )
+    plot_bc_per_roi(
+        composite_data,
+        out_dir,
+        f'{label} BLA Composite',
+        filename_template='BLAComposite_{roi}_BaselineCorrectedCoherency_encoding_stim_vs_nostim.png',
+        footer_text=COMPOSITE_LOGIC_TEXT,
+    )
+    if composite_data.get('has_memory'):
+        plot_quadrant_stim_memory(
+            composite_data,
+            out_dir,
+            f'{label} BLA Composite',
+            filename='BLAComposite_Quadrant_StimMemory_Coherency_encoding.png',
+            footer_text=COMPOSITE_LOGIC_TEXT,
+        )
+        plot_per_roi_quadrant(
+            composite_data,
+            out_dir,
+            f'{label} BLA Composite',
+            filename_template='BLAComposite_IndivQuadrant_{roi}_StimMemory_encoding.png',
+            footer_text=COMPOSITE_LOGIC_TEXT,
+        )
+        plot_bc_bar_by_memory(
+            composite_data,
+            out_dir,
+            f'{label} BLA Composite',
+            filename_template='BLAComposite_Bargraph_Coherency_diff_{mem}_encoding.png',
+            footer_text=COMPOSITE_LOGIC_TEXT,
+        )
+        plot_bc_remembered_forgotten(
+            composite_data,
+            out_dir,
+            f'{label} BLA Composite',
+            filename_template='BLAComposite_{roi}_Baseline_Adjusted_Coherency_RememberedForgotten_encoding.png',
+            footer_text=COMPOSITE_LOGIC_TEXT,
+        )
 
 
 # =========================================================================
@@ -1192,8 +1453,11 @@ if __name__ == '__main__':
     all_dir = ensure_dir(os.path.join(OUTPUT_BASE, 'all'))
 
     generate_common_plots(blaes, blaes_dir, 'BLAES')
+    generate_memory_plots(blaes, blaes_dir, 'BLAES')
+    generate_bla_composite_plots(blaes, blaes_dir, 'BLAES')
     generate_common_plots(amme, amme_dir, 'AMME')
     generate_memory_plots(amme, amme_dir, 'AMME')
+    generate_bla_composite_plots(amme, amme_dir, 'AMME')
 
     # Merge for "all"
     print("\nMerging data for all-combined analysis...")
@@ -1272,6 +1536,8 @@ if __name__ == '__main__':
     export_encoding_mlmr_csv(all_data, CSV_OUTPUT_DIR, 'combined_encoding_coherence_all_mlmr_input', measure_name='Coherence')
 
     generate_common_plots(all_data, all_dir, 'All')
+    generate_memory_plots(all_data, all_dir, 'All')
+    generate_bla_composite_plots(all_data, all_dir, 'All')
     print("\n" + "=" * 60)
     print("Done! Encoding coherence outputs saved to:", OUTPUT_BASE)
     print("=" * 60)
