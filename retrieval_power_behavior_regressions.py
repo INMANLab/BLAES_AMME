@@ -1,14 +1,13 @@
 #!/usr/bin/env python
 """
-Patient-level regressions between retrieval baseline power and memory modulation
-(avg_stim_dprime_diff).
+Patient-level regressions between retrieval baseline-corrected power and memory
+modulation (avg_stim_dprime_diff).
 
-Baseline power measure:
-1. Match the retrieval notebook logic by averaging each patient's available
-   stim x memory retrieval power spectra within each region to get one mean
-   spectrum.
-2. Collapse that mean spectrum within a target band to obtain one scalar
-   baseline power value.
+Baseline-corrected power measure:
+1. Within each patient and region, average the baseline-corrected stim and
+   nostim spectra separately for remembered and forgotten trials.
+2. Collapse each remembered/forgotten spectrum within a target band to obtain
+   the x-axis values for the two regression subfigures.
 """
 
 import shutil
@@ -33,10 +32,16 @@ if not IN_NOTEBOOK:
     matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
-from scipy import stats
 
+from behavior_regression_memory_panels import (
+    MEMORY_ORDER,
+    average_condition_region_dicts,
+    build_memory_band_table,
+    fit_regression,
+    plot_memory_panel_histogram,
+    plot_memory_panel_regression,
+)
 from combined_retrieval_power import (
-    get_overall_power_for_plot,
     load_amme_retrieval,
     load_blaes_retrieval,
     merge_dicts,
@@ -46,7 +51,6 @@ from combined_retrieval_power import (
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = SCRIPT_DIR / "outputs" / "retrieval_power_behavior_regressions"
-BEHAVIOR_CSV = SCRIPT_DIR / "AMMEBLAES_includedpts_firstsession_behavioral.csv"
 TARGET_COLUMN = "avg_stim_dprime_diff"
 TARGET_LABEL = "dprime difference"
 BAND_SPECS = {
@@ -58,10 +62,25 @@ BAND_LABELS = {
     "slow_gamma": "Slow Gamma (35-50 Hz)",
 }
 LOGIC_NOTE = (
-    "X-axis baseline power: within each patient and retrieval ROI, average the available "
-    "stim x memory-condition spectra to one mean power spectrum (matching retrieval notebook logic), "
+    "X-axis baseline-corrected power: within each patient and retrieval ROI, average the "
+    "baseline-corrected stim and nostim spectra separately for remembered and forgotten trials, "
     "then average within the selected band. Y-axis memory modulation: dprime difference."
 )
+
+
+def resolve_behavior_csv():
+    candidates = [
+        SCRIPT_DIR / "AMMEBLAES_includedpts_firstsession_behavioral.csv",
+        SCRIPT_DIR.parent / "AMMEBLAES_includedpts_firstsession_behavioral.csv",
+        SCRIPT_DIR / "behavioral figures" / "AMMEBLAES_includedpts_firstsession_behavioral.csv",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError("Could not locate AMMEBLAES_includedpts_firstsession_behavioral.csv")
+
+
+BEHAVIOR_CSV = resolve_behavior_csv()
 
 
 def ensure_dir(path: Path) -> Path:
@@ -112,31 +131,6 @@ def regression_rois(group_all_power):
     return sorted(roi for roi in group_all_power.keys() if not str(roi).startswith("PNAS"))
 
 
-def build_baseline_power_table(group_all_power, freqs):
-    rows = []
-    freqs = np.asarray(freqs, dtype=np.float64)
-    for roi, subj_dict in group_all_power.items():
-        if str(roi).startswith("PNAS"):
-            continue
-        for patient, spectrum in subj_dict.items():
-            arr = np.asarray(spectrum, dtype=np.float64)
-            if arr.size == 0:
-                continue
-            for band_name, (lo, hi) in BAND_SPECS.items():
-                mask = (freqs >= lo) & (freqs <= hi)
-                if not np.any(mask):
-                    continue
-                rows.append(
-                    {
-                        "Patient": str(patient),
-                        "Region": roi,
-                        "Band": band_name,
-                        "baseline_power": float(np.nanmean(arr[mask])),
-                    }
-                )
-    return pd.DataFrame(rows)
-
-
 def load_behavior():
     behavior = pd.read_csv(BEHAVIOR_CSV)
     if "Patient" not in behavior.columns or TARGET_COLUMN not in behavior.columns:
@@ -149,109 +143,6 @@ def load_behavior():
     behavior = behavior.dropna(subset=[TARGET_COLUMN]).copy()
     behavior = behavior[np.isfinite(behavior[TARGET_COLUMN])].copy()
     return behavior.drop_duplicates(subset=["Patient"])
-
-
-def fit_regression(df):
-    if df["baseline_power"].nunique() < 2:
-        return {
-            "status": "undefined_baseline_power",
-            "n": int(len(df)),
-            "slope": np.nan,
-            "intercept": np.nan,
-            "r": np.nan,
-            "r_squared": np.nan,
-            "p_value": np.nan,
-            "stderr": np.nan,
-            "intercept_stderr": np.nan,
-        }
-    if df[TARGET_COLUMN].nunique() < 2:
-        return {
-            "status": "undefined_memory_modulation",
-            "n": int(len(df)),
-            "slope": np.nan,
-            "intercept": np.nan,
-            "r": np.nan,
-            "r_squared": np.nan,
-            "p_value": np.nan,
-            "stderr": np.nan,
-            "intercept_stderr": np.nan,
-        }
-
-    result = stats.linregress(df["baseline_power"], df[TARGET_COLUMN])
-    out = {
-        "status": "ok",
-        "n": int(len(df)),
-        "slope": float(result.slope),
-        "intercept": float(result.intercept),
-        "r": float(result.rvalue),
-        "r_squared": float(result.rvalue ** 2),
-        "p_value": float(result.pvalue),
-        "stderr": float(result.stderr),
-        "intercept_stderr": float(result.intercept_stderr),
-    }
-    if not np.isfinite(out["slope"]) or not np.isfinite(out["r"]) or not np.isfinite(out["p_value"]):
-        out["status"] = "undefined_fit"
-    return out
-
-
-def make_annotation(stats_row):
-    if stats_row["status"] != "ok":
-        reason = {
-            "undefined_baseline_power": "baseline power has no variability",
-            "undefined_memory_modulation": "memory modulation has no variability",
-            "undefined_fit": "fit returned non-finite values",
-        }.get(stats_row["status"], stats_row["status"])
-        return "\n".join([f"n = {stats_row['n']}", "Regression undefined", reason])
-    return "\n".join(
-        [
-            f"n = {stats_row['n']}",
-            f"slope = {stats_row['slope']:.4f}",
-            f"intercept = {stats_row['intercept']:.4f}",
-            f"r = {stats_row['r']:.3f}",
-            f"R^2 = {stats_row['r_squared']:.3f}",
-            f"p = {stats_row['p_value']:.4g}",
-        ]
-    )
-
-
-def plot_regression(df, stats_row, out_path: Path):
-    fig, ax = plt.subplots(figsize=(8.5, 6.5))
-    x = df["baseline_power"].to_numpy(dtype=float)
-    y = df[TARGET_COLUMN].to_numpy(dtype=float)
-
-    ax.scatter(x, y, s=55, alpha=0.8, color="#355c7d", edgecolors="white", linewidths=0.6)
-    if stats_row["status"] == "ok":
-        order = np.argsort(x)
-        x_sorted = x[order]
-        y_fit = stats_row["intercept"] + stats_row["slope"] * x_sorted
-        ax.plot(x_sorted, y_fit, color="#c06c84", linewidth=2)
-
-    band_label = BAND_LABELS[df["Band"].iloc[0]]
-    ax.set_xlabel(f"Baseline Power ({band_label})", fontsize=13, fontweight="bold")
-    ax.set_ylabel(f"Memory Modulation ({TARGET_LABEL})", fontsize=13, fontweight="bold")
-    ax.set_title(
-        f"Retrieval Power vs Memory Modulation: {df['Region'].iloc[0]} - {band_label}",
-        fontsize=15,
-        fontweight="bold",
-    )
-    ax.tick_params(axis="both", labelsize=11)
-    ax.text(
-        0.98,
-        0.98,
-        make_annotation(stats_row),
-        transform=ax.transAxes,
-        ha="right",
-        va="top",
-        fontsize=10,
-        bbox=dict(boxstyle="round,pad=0.35", facecolor="white", alpha=0.9, edgecolor="#808080"),
-    )
-
-    fig.text(0.015, 0.015, LOGIC_NOTE, ha="left", va="bottom", fontsize=9, wrap=True)
-    fig.tight_layout(rect=[0, 0.08, 1, 1])
-    fig.savefig(out_path, dpi=300, bbox_inches="tight")
-    if IN_NOTEBOOK:
-        plt.show()
-    plt.close(fig)
 
 
 def plot_behavior_histogram(behavior_df, out_path: Path):
@@ -271,36 +162,16 @@ def plot_behavior_histogram(behavior_df, out_path: Path):
     plt.close(fig)
 
 
-def plot_baseline_power_histogram(df, out_path: Path):
-    fig, ax = plt.subplots(figsize=(8, 6))
-    values = df["baseline_power"].to_numpy(dtype=float)
-    values = values[np.isfinite(values)]
-    bins = min(12, max(5, int(np.sqrt(len(values)))))
-    ax.hist(values, bins=bins, color="#8da0cb", edgecolor="white", alpha=0.9)
-    band_label = BAND_LABELS[df["Band"].iloc[0]]
-    ax.set_xlabel(f"Baseline Power ({band_label})", fontsize=13, fontweight="bold")
-    ax.set_ylabel("Patient Count", fontsize=13, fontweight="bold")
-    ax.set_title(
-        f"Baseline Power Distribution: {df['Region'].iloc[0]} - {band_label}",
-        fontsize=15,
-        fontweight="bold",
-    )
-    ax.tick_params(axis="both", labelsize=11)
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=300, bbox_inches="tight")
-    if IN_NOTEBOOK:
-        plt.show()
-    plt.close(fig)
-
-
 def main():
     reset_dir(OUTPUT_DIR)
     behavior = load_behavior()
     all_data = load_all_retrieval_data()
-    overall_power = get_overall_power_for_plot(all_data)
-    source_rois = regression_rois(overall_power)
-
-    power_df = build_baseline_power_table(overall_power, all_data["freqs_post"])
+    memory_power = {
+        "remembered": average_condition_region_dicts(all_data["bc_stim_rem"], all_data["bc_nostim_rem"]),
+        "forgotten": average_condition_region_dicts(all_data["bc_stim_forg"], all_data["bc_nostim_forg"]),
+    }
+    source_rois = regression_rois(average_condition_region_dicts(*memory_power.values()))
+    power_df = build_memory_band_table(memory_power, all_data["freqs_diff"], BAND_SPECS, "baseline_power")
     power_df = power_df[power_df["Region"].isin(source_rois)].copy()
     power_df = power_df[np.isfinite(power_df["baseline_power"])].copy()
 
@@ -320,31 +191,56 @@ def main():
     for roi in source_rois:
         for band_name in BAND_SPECS:
             roi_df = joined[(joined["Region"] == roi) & (joined["Band"] == band_name)].copy()
-            roi_df = roi_df.drop_duplicates(subset=["Patient"])
-            if len(roi_df) < 3:
+            roi_df = roi_df.drop_duplicates(subset=["Patient", "Memory"])
+            if roi_df.empty:
                 continue
 
-            plot_baseline_power_histogram(
+            plot_memory_panel_histogram(
                 roi_df,
+                "baseline_power",
+                BAND_LABELS[band_name],
+                "Baseline-Corrected Power",
+                "Retrieval Power Distribution",
                 hist_dir / f"{roi}_{band_name}_baseline_power_histogram.png",
             )
-            stats_row = fit_regression(roi_df)
-            stats_row["Region"] = roi
-            stats_row["Band"] = band_name
-            summary_rows.append(stats_row)
+            stats_by_memory = {}
+            for memory_name in MEMORY_ORDER:
+                memory_df = roi_df[roi_df["Memory"] == memory_name].copy()
+                if memory_df.empty:
+                    continue
+                stats_row = fit_regression(memory_df, "baseline_power", TARGET_COLUMN, "baseline_power")
+                stats_row["Region"] = roi
+                stats_row["Band"] = band_name
+                stats_row["Memory"] = memory_name
+                summary_rows.append(stats_row)
+                stats_by_memory[memory_name] = stats_row
 
             roi_csv = detail_dir / f"{roi}_{band_name}_baseline_power_vs_memory_modulation.csv"
-            roi_df.sort_values("Patient").to_csv(roi_csv, index=False)
-            plot_regression(roi_df, stats_row, detail_dir / f"{roi}_{band_name}_baseline_power_vs_memory_modulation.png")
+            roi_df.sort_values(["Memory", "Patient"]).to_csv(roi_csv, index=False)
+            plot_memory_panel_regression(
+                roi_df,
+                stats_by_memory,
+                "baseline_power",
+                TARGET_COLUMN,
+                TARGET_LABEL,
+                BAND_LABELS[band_name],
+                "Baseline-Corrected Power",
+                "Retrieval Power vs Memory Modulation",
+                detail_dir / f"{roi}_{band_name}_baseline_power_vs_memory_modulation.png",
+                LOGIC_NOTE,
+                point_color="#355c7d",
+                line_color="#c06c84",
+                undefined_label="baseline_power",
+            )
 
     if not summary_rows:
         raise RuntimeError("No retrieval power regressions could be fit; check patient overlap and baseline power variability.")
 
     summary_df = pd.DataFrame(summary_rows)[
-        ["Region", "Band", "status", "n", "slope", "intercept", "r", "r_squared", "p_value", "stderr", "intercept_stderr"]
-    ].sort_values(["Region", "Band"])
+        ["Region", "Band", "Memory", "status", "n", "slope", "intercept", "r", "r_squared", "p_value", "stderr", "intercept_stderr"]
+    ].sort_values(["Region", "Band", "Memory"])
     summary_df.to_csv(OUTPUT_DIR / "retrieval_power_behavior_regression_summary.csv", index=False)
-    joined.sort_values(["Region", "Band", "Patient"]).to_csv(
+    joined.sort_values(["Region", "Band", "Memory", "Patient"]).to_csv(
         OUTPUT_DIR / "retrieval_power_behavior_regression_joined_data.csv",
         index=False,
     )

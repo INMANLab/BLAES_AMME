@@ -1,15 +1,7 @@
 #!/usr/bin/env python
 """
-Patient-level regressions between combined-cohort retrieval PAC baseline values
-and memory modulation (avg_stim_dprime_diff).
-
-Baseline PAC measure:
-1. Average retrieval PAC within each patient and original region pair across
-   all trials to obtain one mean PAC spectrum.
-2. For BLA composites, average those already-averaged per-pair spectra within
-   each patient after the original region-pair means are formed.
-3. Collapse the resulting spectrum within each configured PAC band to obtain
-   one scalar baseline PAC value for regression.
+Patient-level regressions between combined-cohort retrieval baseline-corrected
+PAC and memory modulation (avg_stim_dprime_diff).
 """
 
 import shutil
@@ -35,6 +27,14 @@ if not IN_NOTEBOOK:
 
 import matplotlib.pyplot as plt
 from scipy import stats
+from behavior_regression_memory_panels import (
+    MEMORY_ORDER,
+    average_condition_region_dicts,
+    build_memory_band_table as build_memory_pac_table,
+    fit_regression as fit_memory_regression,
+    plot_memory_panel_histogram,
+    plot_memory_panel_regression,
+)
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -48,9 +48,10 @@ OUTPUT_DIR = SCRIPT_DIR / "outputs" / "PAC_retrieval_behavior_regressions"
 TARGET_COLUMN = "avg_stim_dprime_diff"
 TARGET_LABEL = "dprime difference"
 LOGIC_NOTE = (
-    "X-axis baseline PAC: mean post_Freq retrieval PAC across trials within patient and region pair, "
-    "with BLA_ALLHPC and BLA_MTL formed only after those per-pair patient averages are computed, "
-    "then mean within the selected PAC band. Y-axis memory modulation: dprime difference."
+    "X-axis baseline-corrected PAC: average the baseline-corrected stim and nostim PAC spectra "
+    "separately for remembered and forgotten trials within each patient and region pair, form BLA "
+    "composites only after those per-pair averages are computed, then average within the selected "
+    "PAC band. Y-axis memory modulation: dprime difference."
 )
 
 
@@ -255,7 +256,11 @@ def main():
     data = augment_with_bla_composites(load_grouped_retrieval_pac_data()["all"])
     behavior = load_behavior()
 
-    pac_df = build_baseline_pac_table(data["post_all"], data["freqs_post"])
+    memory_pac = {
+        "remembered": average_condition_region_dicts(data["diff_stim_rem"], data["diff_nostim_rem"]),
+        "forgotten": average_condition_region_dicts(data["diff_stim_forg"], data["diff_nostim_forg"]),
+    }
+    pac_df = build_memory_pac_table(memory_pac, data["freqs_diff"], PAC_BANDS, "baseline_pac")
     pac_df = pac_df[np.isfinite(pac_df["baseline_pac"])].copy()
     joined = pac_df.merge(behavior, on="Patient", how="inner")
     joined = joined.dropna(subset=["baseline_pac", TARGET_COLUMN]).copy()
@@ -273,25 +278,58 @@ def main():
     for roi in sorted(joined["Region"].unique()):
         for band in PAC_BANDS:
             roi_df = joined[(joined["Region"] == roi) & (joined["Band"] == band)].copy()
-            roi_df = roi_df.drop_duplicates(subset=["Patient"])
-            if len(roi_df) < 3:
+            roi_df = roi_df.drop_duplicates(subset=["Patient", "Memory"])
+            if roi_df.empty:
                 continue
-            plot_baseline_pac_histogram(roi_df, hist_dir / f"{roi}_{band}_baseline_pac_histogram.png")
-            stats_row = fit_regression(roi_df)
-            stats_row["Region"] = roi
-            stats_row["Band"] = band
-            summary_rows.append(stats_row)
-            roi_df.sort_values("Patient").to_csv(detail_dir / f"{roi}_{band}_baseline_pac_vs_memory_modulation.csv", index=False)
-            plot_regression(roi_df, stats_row, detail_dir / f"{roi}_{band}_baseline_pac_vs_memory_modulation.png")
+            lo, hi = PAC_BANDS[band]
+            band_label = f"{band} ({int(lo)}-{int(hi)} Hz)"
+            plot_memory_panel_histogram(
+                roi_df,
+                "baseline_pac",
+                band_label,
+                "Baseline-Corrected PAC",
+                "Retrieval PAC Distribution",
+                hist_dir / f"{roi}_{band}_baseline_pac_histogram.png",
+            )
+            stats_by_memory = {}
+            for memory_name in MEMORY_ORDER:
+                memory_df = roi_df[roi_df["Memory"] == memory_name].copy()
+                if memory_df.empty:
+                    continue
+                stats_row = fit_memory_regression(memory_df, "baseline_pac", TARGET_COLUMN, "baseline_pac")
+                stats_row["Region"] = roi
+                stats_row["Band"] = band
+                stats_row["Memory"] = memory_name
+                summary_rows.append(stats_row)
+                stats_by_memory[memory_name] = stats_row
+            roi_df.sort_values(["Memory", "Patient"]).to_csv(
+                detail_dir / f"{roi}_{band}_baseline_pac_vs_memory_modulation.csv",
+                index=False,
+            )
+            plot_memory_panel_regression(
+                roi_df,
+                stats_by_memory,
+                "baseline_pac",
+                TARGET_COLUMN,
+                TARGET_LABEL,
+                band_label,
+                "Baseline-Corrected PAC",
+                "Retrieval PAC vs Memory Modulation",
+                detail_dir / f"{roi}_{band}_baseline_pac_vs_memory_modulation.png",
+                LOGIC_NOTE,
+                point_color="#2f6c8f",
+                line_color="#b24c63",
+                undefined_label="baseline_pac",
+            )
 
     if not summary_rows:
         raise RuntimeError("No retrieval PAC regressions could be fit; check patient overlap and baseline PAC variability.")
 
     summary_df = pd.DataFrame(summary_rows)[
-        ["Region", "Band", "status", "n", "slope", "intercept", "r", "r_squared", "p_value", "stderr", "intercept_stderr"]
-    ].sort_values(["Region", "Band"])
+        ["Region", "Band", "Memory", "status", "n", "slope", "intercept", "r", "r_squared", "p_value", "stderr", "intercept_stderr"]
+    ].sort_values(["Region", "Band", "Memory"])
     summary_df.to_csv(OUTPUT_DIR / "pac_retrieval_behavior_regression_summary.csv", index=False)
-    joined.sort_values(["Region", "Band", "Patient"]).to_csv(
+    joined.sort_values(["Region", "Band", "Memory", "Patient"]).to_csv(
         OUTPUT_DIR / "pac_retrieval_behavior_regression_joined_data.csv",
         index=False,
     )
