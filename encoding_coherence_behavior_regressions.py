@@ -44,6 +44,7 @@ from combined_encoding_coherence import (
     load_blaes_encoding,
     merge_dicts,
     merge_sets,
+    visible_rois,
 )
 
 
@@ -51,7 +52,6 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = SCRIPT_DIR / "outputs" / "encoding_coherence_behavior_regressions"
 BEHAVIOR_CSV = SCRIPT_DIR / "AMMEBLAES_includedpts_firstsession_behavioral.csv"
 TARGET_COLUMN = "avg_stim_dprime_diff"
-SOURCE_ROIS = ["BLA_CA", "BLA_DG", "BLA_EC", "BLA_HPC", "BLA_PRC", BLA_ALLHPC, BLA_MTL]
 LOGIC_NOTE = (
     "X-axis baseline FC: mean post_Freq encoding coherency across trials within patient and ROI, "
     "then mean across frequencies. Composite ROIs average patient mean spectra across source BLA pairs "
@@ -98,6 +98,14 @@ def load_all_encoding_data():
     return all_data, composite_data
 
 
+def regression_rois(all_data, composite_data):
+    original_rois = visible_rois(
+        all_data["group_all_power"].keys(),
+        all_data.get("overall_plot_exclude_substrings", set()),
+    )
+    return sorted(set(original_rois) | set(composite_data["group_all_power"].keys()))
+
+
 def build_baseline_fc_table(group_all_power):
     rows = []
     for roi, subj_dict in group_all_power.items():
@@ -128,8 +136,34 @@ def load_behavior():
 
 
 def fit_regression(df):
+    if df["baseline_fc"].nunique() < 2:
+        return {
+            "status": "undefined_baseline_fc",
+            "n": int(len(df)),
+            "slope": np.nan,
+            "intercept": np.nan,
+            "r": np.nan,
+            "r_squared": np.nan,
+            "p_value": np.nan,
+            "stderr": np.nan,
+            "intercept_stderr": np.nan,
+        }
+    if df[TARGET_COLUMN].nunique() < 2:
+        return {
+            "status": "undefined_memory_modulation",
+            "n": int(len(df)),
+            "slope": np.nan,
+            "intercept": np.nan,
+            "r": np.nan,
+            "r_squared": np.nan,
+            "p_value": np.nan,
+            "stderr": np.nan,
+            "intercept_stderr": np.nan,
+        }
+
     result = stats.linregress(df["baseline_fc"], df[TARGET_COLUMN])
-    return {
+    out = {
+        "status": "ok",
         "n": int(len(df)),
         "slope": float(result.slope),
         "intercept": float(result.intercept),
@@ -139,9 +173,19 @@ def fit_regression(df):
         "stderr": float(result.stderr),
         "intercept_stderr": float(result.intercept_stderr),
     }
+    if not np.isfinite(out["slope"]) or not np.isfinite(out["r"]) or not np.isfinite(out["p_value"]):
+        out["status"] = "undefined_fit"
+    return out
 
 
 def make_annotation(stats_row):
+    if stats_row["status"] != "ok":
+        reason = {
+            "undefined_baseline_fc": "baseline FC has no variability",
+            "undefined_memory_modulation": "memory modulation has no variability",
+            "undefined_fit": "fit returned non-finite values",
+        }.get(stats_row["status"], stats_row["status"])
+        return "\n".join([f"n = {stats_row['n']}", "Regression undefined", reason])
     return "\n".join(
         [
             f"n = {stats_row['n']}",
@@ -160,10 +204,11 @@ def plot_regression(df, stats_row, out_path: Path):
     y = df[TARGET_COLUMN].to_numpy(dtype=float)
 
     ax.scatter(x, y, s=55, alpha=0.8, color="#1f4e79", edgecolors="white", linewidths=0.6)
-    order = np.argsort(x)
-    x_sorted = x[order]
-    y_fit = stats_row["intercept"] + stats_row["slope"] * x_sorted
-    ax.plot(x_sorted, y_fit, color="#b22222", linewidth=2)
+    if stats_row["status"] == "ok":
+        order = np.argsort(x)
+        x_sorted = x[order]
+        y_fit = stats_row["intercept"] + stats_row["slope"] * x_sorted
+        ax.plot(x_sorted, y_fit, color="#b22222", linewidth=2)
 
     ax.set_xlabel("Baseline Functional Connectivity", fontsize=13, fontweight="bold")
     ax.set_ylabel("Memory Modulation (avg_stim_dprime_diff)", fontsize=13, fontweight="bold")
@@ -193,11 +238,12 @@ def main():
     ensure_dir(OUTPUT_DIR)
     behavior = load_behavior()
     all_data, composite_data = load_all_encoding_data()
+    source_rois = regression_rois(all_data, composite_data)
 
     base_df = build_baseline_fc_table(all_data["group_all_power"])
     composite_df = build_baseline_fc_table(composite_data["group_all_power"])
     fc_df = pd.concat([base_df, composite_df], ignore_index=True)
-    fc_df = fc_df[fc_df["Region"].isin(SOURCE_ROIS)].copy()
+    fc_df = fc_df[fc_df["Region"].isin(source_rois)].copy()
 
     joined = fc_df.merge(behavior, on="Patient", how="inner")
     joined = joined.dropna(subset=["baseline_fc", TARGET_COLUMN]).copy()
@@ -207,10 +253,10 @@ def main():
     detail_dir = ensure_dir(OUTPUT_DIR / "plots")
     summary_rows = []
 
-    for roi in SOURCE_ROIS:
+    for roi in source_rois:
         roi_df = joined[joined["Region"] == roi].copy()
         roi_df = roi_df.drop_duplicates(subset=["Patient"])
-        if len(roi_df) < 3 or roi_df["baseline_fc"].nunique() < 2:
+        if len(roi_df) < 3:
             continue
 
         stats_row = fit_regression(roi_df)
@@ -225,7 +271,7 @@ def main():
         raise RuntimeError("No regressions could be fit; check patient overlap and baseline connectivity variability.")
 
     summary_df = pd.DataFrame(summary_rows)[
-        ["Region", "n", "slope", "intercept", "r", "r_squared", "p_value", "stderr", "intercept_stderr"]
+        ["Region", "status", "n", "slope", "intercept", "r", "r_squared", "p_value", "stderr", "intercept_stderr"]
     ].sort_values("Region")
     summary_df.to_csv(OUTPUT_DIR / "encoding_coherence_behavior_regression_summary.csv", index=False)
     joined.sort_values(["Region", "Patient"]).to_csv(
