@@ -74,6 +74,8 @@ BLAES_ENCODING_REGION_EXCLUSIONS = {
 
 AMME_ENCODING_REGION_EXCLUSIONS = {
     'BLA': {'amyg016', 'amyg046', 'amyg057', 'amyg037'},
+    'CA_DG': {'amyg034'},
+    'CA_HPC': {'amyg034'},
 }
 
 _RESPONDER_STATUS_MAP = None

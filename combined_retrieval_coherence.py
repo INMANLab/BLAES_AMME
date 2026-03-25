@@ -76,7 +76,8 @@ CONNECTED_DOT_ROI_ORDER = [
 AMME_RETRIEVAL_REGION_EXCLUSIONS = {
     'BLA': {'amyg057'},
     'HPC': {'amyg030'},
-    'CA': {'amyg034'},
+    'CA_DG': {'amyg034'},
+    'CA_HPC': {'amyg034'},
 }
 
 _RESPONDER_STATUS_MAP = None
