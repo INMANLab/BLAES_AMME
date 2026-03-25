@@ -130,6 +130,10 @@ def is_same_region_comparison(region):
     return len(parts) == 2 and parts[0] == parts[1]
 
 
+def has_excluded_region_token(region):
+    return 'PNAS' in str(region).split('_')
+
+
 def make_subject_color_map(subjects):
     ordered = sorted(subjects)
     palette = sns.color_palette('husl', len(ordered)) if ordered else []
@@ -274,8 +278,9 @@ def load_blaes_encoding_pac():
             print(f"Skipping {os.path.basename(pac_file)}; missing encoding PAC memory columns.")
             continue
         df = df[~df['Region'].map(is_same_region_comparison)].copy()
+        df = df[~df['Region'].map(has_excluded_region_token)].copy()
         if df.empty:
-            print(f"Skipping {os.path.basename(pac_file)}; no cross-region PAC rows after filtering.")
+            print(f"Skipping {os.path.basename(pac_file)}; no eligible cross-region PAC rows after filtering.")
             continue
 
         pre_cols = sorted_freq_cols(df, 'pre_Freq_')
