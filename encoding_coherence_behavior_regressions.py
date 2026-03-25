@@ -154,7 +154,9 @@ def load_behavior():
     behavior = behavior[["Patient", TARGET_COLUMN]].copy()
     behavior["Patient"] = behavior["Patient"].astype(str)
     behavior[TARGET_COLUMN] = pd.to_numeric(behavior[TARGET_COLUMN], errors="coerce")
-    return behavior.dropna(subset=[TARGET_COLUMN]).drop_duplicates(subset=["Patient"])
+    behavior = behavior.dropna(subset=[TARGET_COLUMN]).copy()
+    behavior = behavior[np.isfinite(behavior[TARGET_COLUMN])].copy()
+    return behavior.drop_duplicates(subset=["Patient"])
 
 
 def fit_regression(df):
@@ -261,6 +263,45 @@ def plot_regression(df, stats_row, out_path: Path):
     plt.close(fig)
 
 
+def plot_behavior_histogram(behavior_df, out_path: Path):
+    fig, ax = plt.subplots(figsize=(8, 6))
+    values = behavior_df[TARGET_COLUMN].to_numpy(dtype=float)
+    values = values[np.isfinite(values)]
+    bins = min(12, max(5, int(np.sqrt(len(values)))))
+    ax.hist(values, bins=bins, color="#4c78a8", edgecolor="white", alpha=0.9)
+    ax.set_xlabel("Memory Modulation (avg_stim_dprime_diff)", fontsize=13, fontweight="bold")
+    ax.set_ylabel("Patient Count", fontsize=13, fontweight="bold")
+    ax.set_title("Distribution of avg_stim_dprime_diff", fontsize=15, fontweight="bold")
+    ax.tick_params(axis="both", labelsize=11)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    if IN_NOTEBOOK:
+        plt.show()
+    plt.close(fig)
+
+
+def plot_baseline_fc_histogram(df, out_path: Path):
+    fig, ax = plt.subplots(figsize=(8, 6))
+    values = df["baseline_fc"].to_numpy(dtype=float)
+    values = values[np.isfinite(values)]
+    bins = min(12, max(5, int(np.sqrt(len(values)))))
+    ax.hist(values, bins=bins, color="#72b7b2", edgecolor="white", alpha=0.9)
+    band_label = BAND_LABELS[df["Band"].iloc[0]]
+    ax.set_xlabel(f"Baseline Functional Connectivity ({band_label})", fontsize=13, fontweight="bold")
+    ax.set_ylabel("Patient Count", fontsize=13, fontweight="bold")
+    ax.set_title(
+        f"Baseline FC Distribution: {df['Region'].iloc[0]} - {band_label}",
+        fontsize=15,
+        fontweight="bold",
+    )
+    ax.tick_params(axis="both", labelsize=11)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    if IN_NOTEBOOK:
+        plt.show()
+    plt.close(fig)
+
+
 def main():
     reset_dir(OUTPUT_DIR)
     behavior = load_behavior()
@@ -271,14 +312,20 @@ def main():
     composite_df = build_baseline_fc_table(composite_data["group_all_power"], composite_data["freqs_post"])
     fc_df = pd.concat([base_df, composite_df], ignore_index=True)
     fc_df = fc_df[fc_df["Region"].isin(source_rois)].copy()
+    fc_df = fc_df[np.isfinite(fc_df["baseline_fc"])].copy()
 
     joined = fc_df.merge(behavior, on="Patient", how="inner")
     joined = joined.dropna(subset=["baseline_fc", TARGET_COLUMN]).copy()
+    joined = joined[np.isfinite(joined["baseline_fc"]) & np.isfinite(joined[TARGET_COLUMN])].copy()
     if joined.empty:
         raise RuntimeError("No overlapping patients between encoding coherence and behavioral memory-modulation data.")
 
     detail_dir = ensure_dir(OUTPUT_DIR / "plots")
+    hist_dir = ensure_dir(OUTPUT_DIR / "histograms")
     summary_rows = []
+
+    matched_behavior = joined[["Patient", TARGET_COLUMN]].drop_duplicates(subset=["Patient"]).sort_values("Patient")
+    plot_behavior_histogram(matched_behavior, hist_dir / "avg_stim_dprime_diff_histogram.png")
 
     for roi in source_rois:
         for band_name in BAND_SPECS:
@@ -287,6 +334,10 @@ def main():
             if len(roi_df) < 3:
                 continue
 
+            plot_baseline_fc_histogram(
+                roi_df,
+                hist_dir / f"{roi}_{band_name}_baseline_fc_histogram.png",
+            )
             stats_row = fit_regression(roi_df)
             stats_row["Region"] = roi
             stats_row["Band"] = band_name
