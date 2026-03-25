@@ -1,17 +1,18 @@
 #!/usr/bin/env python
 """
-Patient-level regressions between encoding PAC baseline values and memory
-modulation (avg_stim_dprime_diff).
+Patient-level regressions between combined-cohort encoding PAC baseline values
+and memory modulation (avg_stim_dprime_diff).
 
 Baseline PAC measure:
-1. Average encoding PAC within each patient and region pair across all trials
-   to obtain one mean PAC spectrum.
-2. Collapse that spectrum within each configured PAC band to obtain one scalar
-   baseline PAC value for regression.
+1. Average encoding PAC within each patient and original region pair across
+   all trials to obtain one mean PAC spectrum.
+2. For BLA composites, average those already-averaged per-pair spectra within
+   each patient after the original region-pair means are formed.
+3. Collapse the resulting spectrum within each configured PAC band to obtain
+   one scalar baseline PAC value for regression.
 """
 
 import shutil
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -37,11 +38,10 @@ from scipy import stats
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-TO_COMBINE_DIR = SCRIPT_DIR / "to_combine"
-if str(TO_COMBINE_DIR) not in sys.path:
-    sys.path.insert(0, str(TO_COMBINE_DIR))
 
-from BLAES_Group_PAC_analyses_from_matlab_encoding import PAC_BANDS, load_blaes_encoding_pac
+from combined_encoding_pac import load_grouped_encoding_pac_data
+from combined_pac_common import COMPOSITE_LOGIC_TEXT, augment_with_bla_composites
+from to_combine.BLAES_Group_PAC_analyses_from_matlab_encoding import PAC_BANDS
 
 
 OUTPUT_DIR = SCRIPT_DIR / "outputs" / "PAC_encoding_behavior_regressions"
@@ -49,6 +49,7 @@ TARGET_COLUMN = "avg_stim_dprime_diff"
 TARGET_LABEL = "dprime difference"
 LOGIC_NOTE = (
     "X-axis baseline PAC: mean post_Freq encoding PAC across trials within patient and region pair, "
+    "with BLA_ALLHPC and BLA_MTL formed only after those per-pair patient averages are computed, "
     "then mean within the selected PAC band. Y-axis memory modulation: dprime difference."
 )
 
@@ -251,7 +252,7 @@ def plot_baseline_pac_histogram(df, out_path: Path):
 
 def main():
     reset_dir(OUTPUT_DIR)
-    data = load_blaes_encoding_pac()
+    data = augment_with_bla_composites(load_grouped_encoding_pac_data()["all"])
     behavior = load_behavior()
 
     pac_df = build_baseline_pac_table(data["post_all"], data["freqs_post"])
@@ -294,7 +295,7 @@ def main():
         OUTPUT_DIR / "pac_encoding_behavior_regression_joined_data.csv",
         index=False,
     )
-    (OUTPUT_DIR / "logic.txt").write_text(LOGIC_NOTE + "\n", encoding="utf-8")
+    (OUTPUT_DIR / "logic.txt").write_text(LOGIC_NOTE + "\n" + COMPOSITE_LOGIC_TEXT + "\n", encoding="utf-8")
     print(f"Wrote PAC encoding regression outputs to: {OUTPUT_DIR}")
 
 

@@ -95,6 +95,19 @@ def finalize_figure(fig=None):
     plt.close(fig)
 
 
+def save_figure_output(fig, out_path, footer_text=None, rect=None, bbox_inches='tight'):
+    if footer_text:
+        fig.text(0.015, 0.015, footer_text, ha='left', va='bottom', fontsize=9, wrap=True)
+        if rect is None:
+            rect = [0, 0.08, 1, 1]
+    if rect is None:
+        fig.tight_layout()
+    else:
+        fig.tight_layout(rect=rect)
+    fig.savefig(out_path, dpi=300, bbox_inches=bbox_inches)
+    finalize_figure(fig)
+
+
 def sorted_freq_cols(df, prefix):
     cols = [col for col in df.columns if col.startswith(prefix)]
     return sorted(cols, key=lambda col: float(col.split(prefix, 1)[1]))
@@ -454,7 +467,7 @@ def load_blaes_retrieval_pac():
 # ## Plotting functions
 
 # %%
-def plot_pac_by_roi(data, out_dir, label='BLAES'):
+def plot_pac_by_roi(data, out_dir, label='BLAES', filename='GroupPAC_byROI_retrieval.png', footer_text=None):
     roi_dict = data['post_all']
     freqs = data['freqs_post']
     if not roi_dict or freqs is None:
@@ -474,12 +487,10 @@ def plot_pac_by_roi(data, out_dir, label='BLAES'):
     ax.tick_params(axis='both', labelsize=13)
     style_axis(ax)
     ax.legend(bbox_to_anchor=(1.02, 0.5), loc='center left', fontsize=9, frameon=False)
-    fig.tight_layout(rect=[0, 0, 0.82, 1])
-    fig.savefig(out_dir / 'GroupPAC_byROI_retrieval.png', dpi=300, bbox_inches='tight')
-    finalize_figure(fig)
+    save_figure_output(fig, out_dir / filename, footer_text=footer_text, rect=[0, 0, 0.82, 1])
 
 
-def plot_pac_by_patient(data, out_dir, label='BLAES'):
+def plot_pac_by_patient(data, out_dir, label='BLAES', filename='GroupPAC_byPatient_retrieval.png', footer_text=None):
     roi_dict = data['post_all']
     freqs = data['freqs_post']
     if not roi_dict or freqs is None:
@@ -500,12 +511,10 @@ def plot_pac_by_patient(data, out_dir, label='BLAES'):
     ax.tick_params(axis='both', labelsize=13)
     style_axis(ax)
     ax.legend(bbox_to_anchor=(1.02, 0.5), loc='center left', fontsize=9, frameon=False)
-    fig.tight_layout(rect=[0, 0, 0.82, 1])
-    fig.savefig(out_dir / 'GroupPAC_byPatient_retrieval.png', dpi=300, bbox_inches='tight')
-    finalize_figure(fig)
+    save_figure_output(fig, out_dir / filename, footer_text=footer_text, rect=[0, 0, 0.82, 1])
 
 
-def plot_stim_vs_nostim(data, out_dir, label='BLAES'):
+def plot_stim_vs_nostim(data, out_dir, label='BLAES', filename='GroupPAC_byROI_retrieval_stim_vs_nostim.png', footer_text=None):
     freqs = data['freqs_post']
     stim_dict = data['post_stim']
     nostim_dict = data['post_nostim']
@@ -531,12 +540,16 @@ def plot_stim_vs_nostim(data, out_dir, label='BLAES'):
     axes[0].set_ylabel('PAC', fontsize=16, fontweight='bold')
     axes[1].legend(bbox_to_anchor=(1.02, 0.5), loc='center left', fontsize=8.5, frameon=False)
     fig.suptitle(f'{label} Retrieval PAC: No Stim vs Stim', fontsize=22, fontweight='bold')
-    fig.tight_layout(rect=[0, 0, 0.84, 0.95])
-    fig.savefig(out_dir / 'GroupPAC_byROI_retrieval_stim_vs_nostim.png', dpi=300, bbox_inches='tight')
-    finalize_figure(fig)
+    save_figure_output(fig, out_dir / filename, footer_text=footer_text, rect=[0, 0, 0.84, 0.95])
 
 
-def plot_per_roi_patient_stim_nostim(data, out_dir, label='BLAES'):
+def plot_per_roi_patient_stim_nostim(
+    data,
+    out_dir,
+    label='BLAES',
+    filename_template='GroupPAC_{roi}_byPatient_retrieval_stim_vs_nostim.png',
+    footer_text=None,
+):
     freqs = data['freqs_post']
     stim_dict = data['post_stim']
     nostim_dict = data['post_nostim']
@@ -564,12 +577,23 @@ def plot_per_roi_patient_stim_nostim(data, out_dir, label='BLAES'):
             handles, labels = collect_unique_legend_items(axes)
             if handles:
                 fig.legend(handles, labels, bbox_to_anchor=(0.86, 0.5), loc='center left', fontsize=8, frameon=False)
-            fig.tight_layout(rect=[0, 0, 0.8, 0.95])
-            fig.savefig(out_dir / f'GroupPAC_{roi}_byPatient_retrieval_stim_vs_nostim.png', dpi=300, bbox_inches='tight')
-        finalize_figure(fig)
+            save_figure_output(
+                fig,
+                out_dir / filename_template.format(roi=roi),
+                footer_text=footer_text,
+                rect=[0, 0, 0.8, 0.95],
+            )
+        else:
+            finalize_figure(fig)
 
 
-def plot_bc_bar_graph(data, out_dir, label='BLAES'):
+def plot_bc_bar_graph(
+    data,
+    out_dir,
+    label='BLAES',
+    filename_template='Bargraph_baseline_corrected_PACDiff_byROI_retrieval_{band}.png',
+    footer_text=None,
+):
     freqs = data['freqs_diff']
     diff_df = compute_condition_diff_df(data['diff_stim'], data['diff_nostim'], freqs, PAC_BANDS)
     if diff_df.empty:
@@ -612,12 +636,21 @@ def plot_bc_bar_graph(data, out_dir, label='BLAES'):
         ax.tick_params(axis='y', labelsize=12)
         style_axis(ax, hide_top_right=True)
         fig.suptitle(f'{label} Retrieval Baseline-corrected PAC Diff (Stim - No Stim)', fontsize=20, fontweight='bold', y=0.98)
-        fig.tight_layout(rect=[0, 0, 1, 0.92])
-        fig.savefig(out_dir / f'Bargraph_baseline_corrected_PACDiff_byROI_retrieval_{band.lower().replace(" ", "_")}.png', dpi=300, bbox_inches='tight')
-        finalize_figure(fig)
+        save_figure_output(
+            fig,
+            out_dir / filename_template.format(band=band.lower().replace(' ', '_')),
+            footer_text=footer_text,
+            rect=[0, 0, 1, 0.92],
+        )
 
 
-def plot_mi_difference_per_roi(data, out_dir, label='BLAES'):
+def plot_mi_difference_per_roi(
+    data,
+    out_dir,
+    label='BLAES',
+    filename_template='{roi}_MI_difference_retrieval.png',
+    footer_text=None,
+):
     freqs = data['freqs_diff']
     stim_dict = data['diff_stim']
     nostim_dict = data['diff_nostim']
@@ -647,12 +680,16 @@ def plot_mi_difference_per_roi(data, out_dir, label='BLAES'):
         ax.set_title(f'{label} Retrieval {roi} MI Difference (Stim - No Stim)', fontsize=20, fontweight='bold')
         ax.tick_params(axis='both', labelsize=12, width=1.8, length=6)
         style_axis(ax, hide_top_right=True)
-        fig.tight_layout()
-        fig.savefig(out_dir / f'{roi}_MI_difference_retrieval.png', dpi=300, bbox_inches='tight')
-        finalize_figure(fig)
+        save_figure_output(fig, out_dir / filename_template.format(roi=roi), footer_text=footer_text)
 
 
-def plot_bc_per_roi(data, out_dir, label='BLAES'):
+def plot_bc_per_roi(
+    data,
+    out_dir,
+    label='BLAES',
+    filename_template='{roi}_BaselineCorrectedPAC_retrieval_stim_vs_nostim.png',
+    footer_text=None,
+):
     freqs = data['freqs_diff']
     stim_dict = data['diff_stim']
     nostim_dict = data['diff_nostim']
@@ -678,12 +715,16 @@ def plot_bc_per_roi(data, out_dir, label='BLAES'):
         ax.tick_params(axis='both', labelsize=12)
         style_axis(ax)
         ax.legend(frameon=False, fontsize=11)
-        fig.tight_layout()
-        fig.savefig(out_dir / f'{roi}_BaselineCorrectedPAC_retrieval_stim_vs_nostim.png', dpi=300, bbox_inches='tight')
-        finalize_figure(fig)
+        save_figure_output(fig, out_dir / filename_template.format(roi=roi), footer_text=footer_text)
 
 
-def plot_quadrant_stim_memory(data, out_dir, label='BLAES'):
+def plot_quadrant_stim_memory(
+    data,
+    out_dir,
+    label='BLAES',
+    filename='Quadrant_StimMemory_PAC_retrieval.png',
+    footer_text=None,
+):
     freqs = data['freqs_post']
     memory_dicts = {
         'NoStim Remembered': data['post_nostim_rem'],
@@ -718,12 +759,16 @@ def plot_quadrant_stim_memory(data, out_dir, label='BLAES'):
     fig.suptitle(f'{label} Retrieval PAC by Stim x Memory', fontsize=20, fontweight='bold')
     handles, labels = axes[0, 0].get_legend_handles_labels()
     fig.legend(handles, labels, bbox_to_anchor=(0.84, 0.5), loc='center left', fontsize=8.5, frameon=False)
-    fig.tight_layout(rect=[0.06, 0.06, 0.82, 0.94])
-    fig.savefig(out_dir / 'Quadrant_StimMemory_PAC_retrieval.png', dpi=300, bbox_inches='tight')
-    finalize_figure(fig)
+    save_figure_output(fig, out_dir / filename, footer_text=footer_text, rect=[0.06, 0.06, 0.82, 0.94])
 
 
-def plot_per_roi_quadrant(data, out_dir, label='BLAES'):
+def plot_per_roi_quadrant(
+    data,
+    out_dir,
+    label='BLAES',
+    filename_template='IndivQuadrant_{roi}_StimMemory_PAC_retrieval.png',
+    footer_text=None,
+):
     freqs = data['freqs_post']
     quadrant_dicts = {
         'Stim Remembered': data['post_stim_rem'],
@@ -770,12 +815,23 @@ def plot_per_roi_quadrant(data, out_dir, label='BLAES'):
             handles, labels = collect_unique_legend_items(axes.flatten())
             if handles:
                 fig.legend(handles, labels, bbox_to_anchor=(0.88, 0.5), loc='center left', fontsize=7.5, frameon=False)
-            fig.tight_layout(rect=[0.06, 0.06, 0.84, 0.92])
-            fig.savefig(out_dir / f'IndivQuadrant_{roi}_StimMemory_PAC_retrieval.png', dpi=300, bbox_inches='tight')
-        finalize_figure(fig)
+            save_figure_output(
+                fig,
+                out_dir / filename_template.format(roi=roi),
+                footer_text=footer_text,
+                rect=[0.06, 0.06, 0.84, 0.92],
+            )
+        else:
+            finalize_figure(fig)
 
 
-def plot_bc_bar_by_memory(data, out_dir, label='BLAES'):
+def plot_bc_bar_by_memory(
+    data,
+    out_dir,
+    label='BLAES',
+    filename_template='Bargraph_PAC_diff_{mem}_retrieval_{band}.png',
+    footer_text=None,
+):
     freqs = data['freqs_diff']
     if freqs is None:
         return
@@ -830,12 +886,21 @@ def plot_bc_bar_by_memory(data, out_dir, label='BLAES'):
             ax.tick_params(axis='y', labelsize=12)
             style_axis(ax, hide_top_right=True)
             fig.suptitle(f'{label} Retrieval PAC Diff, {memory_label} Trials', fontsize=20, fontweight='bold', y=0.98)
-            fig.tight_layout(rect=[0, 0, 1, 0.92])
-            fig.savefig(out_dir / f'Bargraph_PAC_diff_{memory_cond}_retrieval_{band.lower().replace(" ", "_")}.png', dpi=300, bbox_inches='tight')
-            finalize_figure(fig)
+            save_figure_output(
+                fig,
+                out_dir / filename_template.format(mem=memory_cond, band=band.lower().replace(' ', '_')),
+                footer_text=footer_text,
+                rect=[0, 0, 1, 0.92],
+            )
 
 
-def plot_bc_remembered_forgotten(data, out_dir, label='BLAES'):
+def plot_bc_remembered_forgotten(
+    data,
+    out_dir,
+    label='BLAES',
+    filename_template='{roi}_Baseline_Adjusted_PAC_RememberedForgotten_retrieval.png',
+    footer_text=None,
+):
     freqs = data['freqs_diff']
     if freqs is None:
         return
@@ -873,9 +938,14 @@ def plot_bc_remembered_forgotten(data, out_dir, label='BLAES'):
             handles, labels = axes[0].get_legend_handles_labels()
             fig.legend(handles, labels, bbox_to_anchor=(0.92, 0.5), loc='center left', fontsize=10, frameon=False)
             fig.suptitle(f'{label} Retrieval {roi} Baseline-corrected PAC', fontsize=18, fontweight='bold')
-            fig.tight_layout(rect=[0, 0, 0.9, 0.93])
-            fig.savefig(out_dir / f'{roi}_Baseline_Adjusted_PAC_RememberedForgotten_retrieval.png', dpi=300, bbox_inches='tight')
-        finalize_figure(fig)
+            save_figure_output(
+                fig,
+                out_dir / filename_template.format(roi=roi),
+                footer_text=footer_text,
+                rect=[0, 0, 0.9, 0.93],
+            )
+        else:
+            finalize_figure(fig)
 
 
 # %% [markdown]
