@@ -1,0 +1,958 @@
+#!/usr/bin/env python
+# %% [markdown]
+# ## Phase-Amplitude Coupling visualizations
+#
+# Author: Martina Hollearn
+#
+# Updated to generate BLAES retrieval PAC visualizations and summary tables in
+# `outputs/PAC_retrieval`.
+
+# %%
+import os
+import glob
+import shutil
+import warnings
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import matplotlib
+
+
+def running_in_notebook():
+    try:
+        from IPython import get_ipython
+        shell = get_ipython()
+        return shell is not None and shell.__class__.__name__ == 'ZMQInteractiveShell'
+    except Exception:
+        return False
+
+
+IN_NOTEBOOK = running_in_notebook()
+if not IN_NOTEBOOK:
+    matplotlib.use('Agg')
+else:
+    try:
+        from IPython import get_ipython
+        shell = get_ipython()
+        if shell is not None:
+            shell.run_line_magic('matplotlib', 'inline')
+            shell.run_line_magic('config', "InlineBackend.figure_format = 'retina'")
+    except Exception:
+        pass
+
+import matplotlib.pyplot as plt
+
+warnings.filterwarnings('ignore')
+sns.set_theme(style='white')
+matplotlib.rcParams['axes.grid'] = False
+matplotlib.rcParams['grid.alpha'] = 0.0
+
+
+# %% [markdown]
+# ## Configuration
+
+# %%
+def get_repo_dir():
+    if '__file__' in globals():
+        script_path = Path(__file__).resolve()
+        return script_path.parent.parent if script_path.parent.name == 'to_combine' else script_path.parent
+    cwd = Path.cwd().resolve()
+    return cwd.parent if cwd.name == 'to_combine' else cwd
+
+
+REPO_DIR = get_repo_dir()
+OUTPUT_DIR = REPO_DIR / 'outputs' / 'PAC_retrieval'
+CSV_DIR = OUTPUT_DIR / 'csvs'
+
+PROJECT_PATH = Path('/Users/martinahollearn/Library/CloudStorage/Box-Box/InmanLab/BLAES_data/dissertation/LFP_analyses')
+DATA_PATH = PROJECT_PATH / 'Results_CSVOutput'
+PAC_FILES = sorted(glob.glob(str(DATA_PATH / '*phase3*PAC_TG*.csv')))
+
+PAC_BANDS = {
+    'Slow gamma': (35, 50),
+}
+
+MEMORY_LABELS = {
+    'Old': 'remembered',
+    'New': 'forgotten',
+}
+
+
+# %% [markdown]
+# ## Helpers
+
+# %%
+def ensure_dir(path):
+    Path(path).mkdir(parents=True, exist_ok=True)
+    return Path(path)
+
+
+def finalize_figure(fig=None):
+    if IN_NOTEBOOK:
+        plt.show()
+    plt.close(fig)
+
+
+def sorted_freq_cols(df, prefix):
+    cols = [col for col in df.columns if col.startswith(prefix)]
+    return sorted(cols, key=lambda col: float(col.split(prefix, 1)[1]))
+
+
+def freq_values(freq_cols, prefix):
+    return np.array([float(col.split(prefix, 1)[1]) for col in freq_cols], dtype=float)
+
+
+def clean_region_label(region):
+    parts = [part.strip() for part in str(region).split('_') if part.strip()]
+    cleaned = ['EC' if part == 'ER' else part for part in parts]
+    if len(cleaned) == 2:
+        cleaned = sorted(cleaned)
+    return '_'.join(cleaned)
+
+
+def is_same_region_comparison(region):
+    parts = str(region).split('_')
+    return len(parts) == 2 and parts[0] == parts[1]
+
+
+def make_subject_color_map(subjects):
+    ordered = sorted(subjects)
+    palette = sns.color_palette('husl', len(ordered)) if ordered else []
+    return {subject: color for subject, color in zip(ordered, palette)}
+
+
+def make_roi_color_map(rois):
+    ordered = sorted(rois)
+    palette = sns.color_palette('husl', len(ordered)) if ordered else []
+    return {roi: color for roi, color in zip(ordered, palette)}
+
+
+def collect_unique_legend_items(axes):
+    seen = set()
+    handles = []
+    labels = []
+    for ax in axes:
+        h, l = ax.get_legend_handles_labels()
+        for handle, label in zip(h, l):
+            if not label or label in seen:
+                continue
+            seen.add(label)
+            handles.append(handle)
+            labels.append(label)
+    return handles, labels
+
+
+def style_axis(ax, hide_top_right=False):
+    ax.grid(False)
+    ax.set_facecolor('white')
+    if hide_top_right:
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+
+
+def add_grouped_vectors(target, df, group_cols, value_cols):
+    if df.empty:
+        return
+    grouped = df.groupby(group_cols)[value_cols].mean().reset_index()
+    for _, row in grouped.iterrows():
+        subject = row['Patient']
+        region = row['Region']
+        target.setdefault(region, {})[subject] = row[value_cols].to_numpy(dtype=np.float64)
+
+
+def build_band_summary_rows(source_dict, freqs, bands, condition, measure_name):
+    rows = []
+    if not source_dict or freqs is None:
+        return rows
+    for region, subject_dict in source_dict.items():
+        for patient, values in subject_dict.items():
+            for band_name, (low, high) in bands.items():
+                mask = (freqs >= low) & (freqs <= high)
+                if not mask.any():
+                    continue
+                rows.append({
+                    'Measure': measure_name,
+                    'Patient': patient,
+                    'Region': region,
+                    'condition': condition,
+                    'band': band_name,
+                    'mean_value': float(np.nanmean(values[mask])),
+                })
+    return rows
+
+
+def compute_condition_diff_df(stim_dict, nostim_dict, freqs, bands, value_name='mean_pac_diff'):
+    rows = []
+    if not stim_dict or not nostim_dict or freqs is None:
+        return pd.DataFrame(columns=['Patient', 'Region', 'band', value_name])
+    all_rois = sorted(set(stim_dict.keys()) | set(nostim_dict.keys()))
+    for roi in all_rois:
+        shared_subjects = sorted(set(stim_dict.get(roi, {})) & set(nostim_dict.get(roi, {})))
+        for patient in shared_subjects:
+            diff_vec = np.asarray(stim_dict[roi][patient], dtype=np.float64) - np.asarray(nostim_dict[roi][patient], dtype=np.float64)
+            for band_name, (low, high) in bands.items():
+                mask = (freqs >= low) & (freqs <= high)
+                if not mask.any():
+                    continue
+                rows.append({
+                    'Patient': patient,
+                    'Region': roi,
+                    'band': band_name,
+                    value_name: float(np.nanmean(diff_vec[mask])),
+                })
+    return pd.DataFrame(rows)
+
+
+# %% [markdown]
+# ## Retrieval Helpers
+
+# %%
+def normalize_stimulation_blaes(x):
+    if pd.isna(x):
+        return None
+    if isinstance(x, str):
+        x = x.strip().lower()
+    if x in {0, '0', 0.0, False, 'false', 'nostim', 'no_stim', 'no stim'}:
+        return 'nostim'
+    if x in {1, '1', 1.0, True, 'true', 'stim'}:
+        return 'stim'
+    return None
+
+
+def normalize_memory_condition_blaes(x):
+    if pd.isna(x):
+        return None
+    s = str(x).strip().lower()
+    if s in {'targ', 'old'}:
+        return 'old'
+    if s in {'new', 'foil', 'lure'}:
+        return 'new'
+    return None
+
+
+def normalize_response_blaes(x):
+    if pd.isna(x):
+        return None
+    s = str(x).strip().lower()
+    if s in {'old', 'yes'}:
+        return 'old'
+    if s in {'new', 'no'}:
+        return 'new'
+    old_codes = {'78', '66', '37'}
+    new_codes = {'67', '86', '39'}
+    if s in old_codes:
+        return 'old'
+    if s in new_codes:
+        return 'new'
+    try:
+        n = int(float(s))
+        if n in {78, 66, 37}:
+            return 'old'
+        if n in {67, 86, 39}:
+            return 'new'
+    except Exception:
+        pass
+    return None
+
+
+def add_memory_condition_blaes(df):
+    df = df.copy()
+    if 'trial_type_raw' not in df.columns:
+        if 'trial_type' not in df.columns:
+            return df
+        df['trial_type_raw'] = df['trial_type']
+
+    response_col = next((c for c in ['response', 'yes_or_no'] if c in df.columns), None)
+    if response_col is None:
+        return df
+
+    df['memory_condition'] = df['trial_type_raw'].apply(normalize_memory_condition_blaes)
+    df['normalized_response'] = df[response_col].apply(normalize_response_blaes)
+
+    conditions = [
+        (df['memory_condition'] == 'old') & (df['normalized_response'] == 'old'),
+        (df['memory_condition'] == 'old') & (df['normalized_response'] == 'new'),
+    ]
+    values = ['remembered', 'forgotten']
+    df['memory_cond'] = np.select(conditions, values, default=np.nan)
+    return df[df['memory_cond'].isin(['remembered', 'forgotten'])].copy()
+
+
+def normalize_trial_type_amme(ttype):
+    if isinstance(ttype, str) and 'stim' in ttype.lower() and ttype.lower() != 'nostim':
+        return 'stim'
+    if isinstance(ttype, str) and ttype.lower() == 'nostim':
+        return 'nostim'
+    return None
+
+
+# %% [markdown]
+# ## Load and organize PAC data
+
+# %%
+def load_blaes_retrieval_pac():
+    data = {
+        'post_all': {},
+        'post_stim': {},
+        'post_nostim': {},
+        'post_stim_rem': {},
+        'post_stim_forg': {},
+        'post_nostim_rem': {},
+        'post_nostim_forg': {},
+        'diff_stim': {},
+        'diff_nostim': {},
+        'diff_stim_rem': {},
+        'diff_stim_forg': {},
+        'diff_nostim_rem': {},
+        'diff_nostim_forg': {},
+        'freqs_post': None,
+        'freqs_diff': None,
+        'trial_count_rows': [],
+    }
+
+    for pac_file in PAC_FILES:
+        df = pd.read_csv(pac_file)
+
+        base_required_cols = {'Patient', 'Region'}
+        if not base_required_cols.issubset(df.columns):
+            print(f"Skipping {os.path.basename(pac_file)}; missing required columns.")
+            continue
+
+        df = df.copy()
+        df['Region'] = df['Region'].map(clean_region_label)
+
+        if 'stimulation' in df.columns and 'response' in df.columns:
+            if 'trial_type' in df.columns:
+                df['trial_type_raw'] = df['trial_type']
+            df['trial_type'] = df['stimulation'].apply(normalize_stimulation_blaes)
+            df = df[df['trial_type'].notnull()].copy()
+            if df.empty or df['trial_type'].nunique() < 2:
+                print(f"Skipping {os.path.basename(pac_file)}; missing both stim and nostim retrieval trials.")
+                continue
+
+            df = add_memory_condition_blaes(df)
+            if df.empty:
+                print(f"Skipping {os.path.basename(pac_file)}; no remembered/forgotten old-item retrieval rows.")
+                continue
+        elif 'trial_type' in df.columns and 'yes_or_no' in df.columns:
+            df['trial_type'] = df['trial_type'].apply(normalize_trial_type_amme)
+            df = df[df['trial_type'].notnull()].copy()
+            if df.empty or df['trial_type'].nunique() < 2:
+                print(f"Skipping {os.path.basename(pac_file)}; missing both stim and nostim retrieval trials.")
+                continue
+            df = df[df['yes_or_no'].isin(['yes', 'no'])].copy()
+            if df.empty:
+                print(f"Skipping {os.path.basename(pac_file)}; no yes/no retrieval rows.")
+                continue
+            df['memory_cond'] = np.where(df['yes_or_no'] == 'yes', 'remembered', 'forgotten')
+        else:
+            print(f"Skipping {os.path.basename(pac_file)}; missing required retrieval PAC columns.")
+            continue
+
+        df = df[~df['Region'].map(is_same_region_comparison)].copy()
+        if df.empty:
+            print(f"Skipping {os.path.basename(pac_file)}; no cross-region PAC rows after filtering.")
+            continue
+
+        pre_cols = sorted_freq_cols(df, 'pre_Freq_')
+        post_cols = sorted_freq_cols(df, 'post_Freq_')
+        if not pre_cols or not post_cols:
+            print(f"Skipping {os.path.basename(pac_file)}; missing pre/post frequency columns.")
+            continue
+
+        shared_freqs = sorted(set(freq_values(pre_cols, 'pre_Freq_')) & set(freq_values(post_cols, 'post_Freq_')))
+        if not shared_freqs:
+            print(f"Skipping {os.path.basename(pac_file)}; no shared PAC frequencies.")
+            continue
+
+        pre_cols = [f'pre_Freq_{int(freq) if float(freq).is_integer() else freq}' for freq in shared_freqs]
+        post_cols = [f'post_Freq_{int(freq) if float(freq).is_integer() else freq}' for freq in shared_freqs]
+        diff_cols = []
+        for freq, pre_col, post_col in zip(shared_freqs, pre_cols, post_cols):
+            diff_col = f'diff_Freq_{int(freq) if float(freq).is_integer() else freq}'
+            df[diff_col] = df[post_col] - df[pre_col]
+            diff_cols.append(diff_col)
+
+        if data['freqs_post'] is None:
+            data['freqs_post'] = np.array(shared_freqs, dtype=float)
+        if data['freqs_diff'] is None:
+            data['freqs_diff'] = np.array(shared_freqs, dtype=float)
+
+        patient = str(df['Patient'].iloc[0])
+        print(f"Processing {os.path.basename(pac_file)} [{patient}]")
+
+        add_grouped_vectors(data['post_all'], df, ['Patient', 'Region'], post_cols)
+        add_grouped_vectors(data['post_stim'], df[df['trial_type'] == 'stim'], ['Patient', 'Region'], post_cols)
+        add_grouped_vectors(data['post_nostim'], df[df['trial_type'] == 'nostim'], ['Patient', 'Region'], post_cols)
+
+        add_grouped_vectors(
+            data['post_stim_rem'],
+            df[(df['trial_type'] == 'stim') & (df['memory_cond'] == 'remembered')],
+            ['Patient', 'Region'],
+            post_cols,
+        )
+        add_grouped_vectors(
+            data['post_stim_forg'],
+            df[(df['trial_type'] == 'stim') & (df['memory_cond'] == 'forgotten')],
+            ['Patient', 'Region'],
+            post_cols,
+        )
+        add_grouped_vectors(
+            data['post_nostim_rem'],
+            df[(df['trial_type'] == 'nostim') & (df['memory_cond'] == 'remembered')],
+            ['Patient', 'Region'],
+            post_cols,
+        )
+        add_grouped_vectors(
+            data['post_nostim_forg'],
+            df[(df['trial_type'] == 'nostim') & (df['memory_cond'] == 'forgotten')],
+            ['Patient', 'Region'],
+            post_cols,
+        )
+
+        add_grouped_vectors(data['diff_stim'], df[df['trial_type'] == 'stim'], ['Patient', 'Region'], diff_cols)
+        add_grouped_vectors(data['diff_nostim'], df[df['trial_type'] == 'nostim'], ['Patient', 'Region'], diff_cols)
+
+        add_grouped_vectors(
+            data['diff_stim_rem'],
+            df[(df['trial_type'] == 'stim') & (df['memory_cond'] == 'remembered')],
+            ['Patient', 'Region'],
+            diff_cols,
+        )
+        add_grouped_vectors(
+            data['diff_stim_forg'],
+            df[(df['trial_type'] == 'stim') & (df['memory_cond'] == 'forgotten')],
+            ['Patient', 'Region'],
+            diff_cols,
+        )
+        add_grouped_vectors(
+            data['diff_nostim_rem'],
+            df[(df['trial_type'] == 'nostim') & (df['memory_cond'] == 'remembered')],
+            ['Patient', 'Region'],
+            diff_cols,
+        )
+        add_grouped_vectors(
+            data['diff_nostim_forg'],
+            df[(df['trial_type'] == 'nostim') & (df['memory_cond'] == 'forgotten')],
+            ['Patient', 'Region'],
+            diff_cols,
+        )
+
+        counts = (
+            df.groupby(['Patient', 'Region', 'trial_type', 'memory_cond'])
+            .size()
+            .reset_index(name='n_trials')
+        )
+        data['trial_count_rows'].append(counts)
+
+    return data
+
+
+# %% [markdown]
+# ## Plotting functions
+
+# %%
+def plot_pac_by_roi(data, out_dir, label='BLAES'):
+    roi_dict = data['post_all']
+    freqs = data['freqs_post']
+    if not roi_dict or freqs is None:
+        return
+    roi_colors = make_roi_color_map(roi_dict.keys())
+    fig, ax = plt.subplots(figsize=(14, 9))
+    for roi in sorted(roi_dict):
+        matrix = np.array(list(roi_dict[roi].values()), dtype=np.float64)
+        mean = matrix.mean(axis=0)
+        std = matrix.std(axis=0)
+        color = roi_colors.get(roi, 'gray')
+        ax.plot(freqs, mean, color=color, linewidth=2, label=f'{roi} ({matrix.shape[0]})')
+        ax.fill_between(freqs, mean - std, mean + std, color=color, alpha=0.18)
+    ax.set_xlabel('Amplitude Frequency (Hz)', fontsize=18, fontweight='bold')
+    ax.set_ylabel('PAC', fontsize=18, fontweight='bold')
+    ax.set_title(f'{label} Retrieval PAC by ROI', fontsize=22, fontweight='bold')
+    ax.tick_params(axis='both', labelsize=13)
+    style_axis(ax)
+    ax.legend(bbox_to_anchor=(1.02, 0.5), loc='center left', fontsize=9, frameon=False)
+    fig.tight_layout(rect=[0, 0, 0.82, 1])
+    fig.savefig(out_dir / 'GroupPAC_byROI_retrieval.png', dpi=300, bbox_inches='tight')
+    finalize_figure(fig)
+
+
+def plot_pac_by_patient(data, out_dir, label='BLAES'):
+    roi_dict = data['post_all']
+    freqs = data['freqs_post']
+    if not roi_dict or freqs is None:
+        return
+    patient_vectors = {}
+    for roi, subject_dict in roi_dict.items():
+        for patient, values in subject_dict.items():
+            patient_vectors.setdefault(patient, []).append(values)
+    if not patient_vectors:
+        return
+    fig, ax = plt.subplots(figsize=(14, 9))
+    for patient in sorted(patient_vectors):
+        mean_vec = np.array(patient_vectors[patient], dtype=np.float64).mean(axis=0)
+        ax.plot(freqs, mean_vec, linewidth=1.8, label=patient)
+    ax.set_xlabel('Amplitude Frequency (Hz)', fontsize=18, fontweight='bold')
+    ax.set_ylabel('PAC', fontsize=18, fontweight='bold')
+    ax.set_title(f'{label} Retrieval PAC by Patient', fontsize=22, fontweight='bold')
+    ax.tick_params(axis='both', labelsize=13)
+    style_axis(ax)
+    ax.legend(bbox_to_anchor=(1.02, 0.5), loc='center left', fontsize=9, frameon=False)
+    fig.tight_layout(rect=[0, 0, 0.82, 1])
+    fig.savefig(out_dir / 'GroupPAC_byPatient_retrieval.png', dpi=300, bbox_inches='tight')
+    finalize_figure(fig)
+
+
+def plot_stim_vs_nostim(data, out_dir, label='BLAES'):
+    freqs = data['freqs_post']
+    stim_dict = data['post_stim']
+    nostim_dict = data['post_nostim']
+    if freqs is None or not stim_dict or not nostim_dict:
+        return
+    all_rois = sorted(set(stim_dict.keys()) | set(nostim_dict.keys()))
+    roi_colors = make_roi_color_map(all_rois)
+    fig, axes = plt.subplots(1, 2, figsize=(18, 8), sharex=True, sharey=True)
+    for ax, title, roi_dict in zip(axes, ['No Stim', 'Stim'], [nostim_dict, stim_dict]):
+        for roi in all_rois:
+            if roi not in roi_dict:
+                continue
+            matrix = np.array(list(roi_dict[roi].values()), dtype=np.float64)
+            mean = matrix.mean(axis=0)
+            std = matrix.std(axis=0)
+            color = roi_colors.get(roi, 'gray')
+            ax.plot(freqs, mean, color=color, linewidth=2, label=f'{roi} ({matrix.shape[0]})')
+            ax.fill_between(freqs, mean - std, mean + std, color=color, alpha=0.18)
+        ax.set_title(title, fontsize=18, fontweight='bold')
+        ax.set_xlabel('Amplitude Frequency (Hz)', fontsize=16, fontweight='bold')
+        ax.tick_params(axis='both', labelsize=12)
+        style_axis(ax)
+    axes[0].set_ylabel('PAC', fontsize=16, fontweight='bold')
+    axes[1].legend(bbox_to_anchor=(1.02, 0.5), loc='center left', fontsize=8.5, frameon=False)
+    fig.suptitle(f'{label} Retrieval PAC: No Stim vs Stim', fontsize=22, fontweight='bold')
+    fig.tight_layout(rect=[0, 0, 0.84, 0.95])
+    fig.savefig(out_dir / 'GroupPAC_byROI_retrieval_stim_vs_nostim.png', dpi=300, bbox_inches='tight')
+    finalize_figure(fig)
+
+
+def plot_per_roi_patient_stim_nostim(data, out_dir, label='BLAES'):
+    freqs = data['freqs_post']
+    stim_dict = data['post_stim']
+    nostim_dict = data['post_nostim']
+    if freqs is None or (not stim_dict and not nostim_dict):
+        return
+    all_rois = sorted(set(stim_dict.keys()) | set(nostim_dict.keys()))
+    for roi in all_rois:
+        roi_subjects = set(stim_dict.get(roi, {})) | set(nostim_dict.get(roi, {}))
+        if not roi_subjects:
+            continue
+        subject_colors = make_subject_color_map(roi_subjects)
+        fig, axes = plt.subplots(1, 2, figsize=(18, 8), sharex=True, sharey=True)
+        plotted_any = False
+        for ax, title, roi_dict in zip(axes, [f'{roi} - No Stim', f'{roi} - Stim'], [nostim_dict, stim_dict]):
+            for patient, values in sorted(roi_dict.get(roi, {}).items()):
+                ax.plot(freqs, values, color=subject_colors[patient], linewidth=1.6, label=patient)
+                plotted_any = True
+            ax.set_title(title, fontsize=16, fontweight='bold')
+            ax.set_xlabel('Amplitude Frequency (Hz)', fontsize=15, fontweight='bold')
+            ax.tick_params(axis='both', labelsize=11)
+            style_axis(ax)
+        axes[0].set_ylabel('PAC', fontsize=15, fontweight='bold')
+        fig.suptitle(f'{label} Retrieval PAC: {roi} by Patient', fontsize=20, fontweight='bold')
+        if plotted_any:
+            handles, labels = collect_unique_legend_items(axes)
+            if handles:
+                fig.legend(handles, labels, bbox_to_anchor=(0.86, 0.5), loc='center left', fontsize=8, frameon=False)
+            fig.tight_layout(rect=[0, 0, 0.8, 0.95])
+            fig.savefig(out_dir / f'GroupPAC_{roi}_byPatient_retrieval_stim_vs_nostim.png', dpi=300, bbox_inches='tight')
+        finalize_figure(fig)
+
+
+def plot_bc_bar_graph(data, out_dir, label='BLAES'):
+    freqs = data['freqs_diff']
+    diff_df = compute_condition_diff_df(data['diff_stim'], data['diff_nostim'], freqs, PAC_BANDS)
+    if diff_df.empty:
+        return
+    roi_order = sorted(diff_df['Region'].unique())
+    gray_values = np.linspace(0.85, 0.45, len(roi_order))
+    palette = {roi: (gray, gray, gray) for roi, gray in zip(roi_order, gray_values)}
+    for band in [name for name in PAC_BANDS if name in diff_df['band'].unique()]:
+        band_df = diff_df[diff_df['band'] == band].copy()
+        if band_df.empty:
+            continue
+        fig, ax = plt.subplots(figsize=(13, 8.5))
+        sns.barplot(
+            data=band_df,
+            x='Region',
+            y='mean_pac_diff',
+            hue='Region',
+            palette=palette,
+            errorbar='se',
+            dodge=False,
+            legend=False,
+            order=roi_order,
+            ax=ax,
+        )
+        sns.stripplot(
+            data=band_df,
+            x='Region',
+            y='mean_pac_diff',
+            color='black',
+            alpha=0.55,
+            jitter=0.18,
+            order=roi_order,
+            ax=ax,
+        )
+        ax.axhline(0, color='gray', linewidth=1.2)
+        ax.set_xlabel('')
+        ax.set_ylabel('Baseline-corrected PAC Diff', fontsize=16, fontweight='bold')
+        ax.set_title(band, fontsize=18, fontweight='bold')
+        ax.tick_params(axis='x', labelsize=10, rotation=45)
+        ax.tick_params(axis='y', labelsize=12)
+        style_axis(ax, hide_top_right=True)
+        fig.suptitle(f'{label} Retrieval Baseline-corrected PAC Diff (Stim - No Stim)', fontsize=20, fontweight='bold', y=0.98)
+        fig.tight_layout(rect=[0, 0, 1, 0.92])
+        fig.savefig(out_dir / f'Bargraph_baseline_corrected_PACDiff_byROI_retrieval_{band.lower().replace(" ", "_")}.png', dpi=300, bbox_inches='tight')
+        finalize_figure(fig)
+
+
+def plot_mi_difference_per_roi(data, out_dir, label='BLAES'):
+    freqs = data['freqs_diff']
+    stim_dict = data['diff_stim']
+    nostim_dict = data['diff_nostim']
+    if freqs is None or not stim_dict or not nostim_dict:
+        return
+    for roi in sorted(set(stim_dict.keys()) | set(nostim_dict.keys())):
+        shared_subjects = sorted(set(stim_dict.get(roi, {})) & set(nostim_dict.get(roi, {})))
+        if not shared_subjects:
+            continue
+        diff_matrix = np.array(
+            [
+                np.asarray(stim_dict[roi][patient], dtype=np.float64) - np.asarray(nostim_dict[roi][patient], dtype=np.float64)
+                for patient in shared_subjects
+            ],
+            dtype=np.float64,
+        )
+        mean = diff_matrix.mean(axis=0)
+        sem = diff_matrix.std(axis=0) / np.sqrt(diff_matrix.shape[0])
+
+        fig, ax = plt.subplots(figsize=(10.5, 7))
+        ax.axvspan(PAC_BANDS['Slow gamma'][0], PAC_BANDS['Slow gamma'][1], color='#E8E8E8', alpha=1.0, zorder=0)
+        ax.axhline(0, color='red', linewidth=1.8, linestyle=(0, (4, 4)), zorder=1)
+        ax.plot(freqs, mean, color='#8E8E8E', linewidth=3, zorder=3)
+        ax.fill_between(freqs, mean - sem, mean + sem, color='#BDBDBD', alpha=0.85, zorder=2)
+        ax.set_xlabel('Amplitude Frequency (Hz)', fontsize=16, fontweight='bold')
+        ax.set_ylabel('MI Difference', fontsize=16, fontweight='bold')
+        ax.set_title(f'{label} Retrieval {roi} MI Difference (Stim - No Stim)', fontsize=20, fontweight='bold')
+        ax.tick_params(axis='both', labelsize=12, width=1.8, length=6)
+        style_axis(ax, hide_top_right=True)
+        fig.tight_layout()
+        fig.savefig(out_dir / f'{roi}_MI_difference_retrieval.png', dpi=300, bbox_inches='tight')
+        finalize_figure(fig)
+
+
+def plot_bc_per_roi(data, out_dir, label='BLAES'):
+    freqs = data['freqs_diff']
+    stim_dict = data['diff_stim']
+    nostim_dict = data['diff_nostim']
+    if freqs is None or (not stim_dict and not nostim_dict):
+        return
+    for roi in sorted(set(stim_dict.keys()) | set(nostim_dict.keys())):
+        stim_subjects = stim_dict.get(roi, {})
+        nostim_subjects = nostim_dict.get(roi, {})
+        if not stim_subjects and not nostim_subjects:
+            continue
+        fig, ax = plt.subplots(figsize=(10, 7))
+        for title, subject_dict, color in [('No Stim', nostim_subjects, '#1f77b4'), ('Stim', stim_subjects, '#d62728')]:
+            if not subject_dict:
+                continue
+            matrix = np.array(list(subject_dict.values()), dtype=np.float64)
+            mean = matrix.mean(axis=0)
+            sem = matrix.std(axis=0) / np.sqrt(matrix.shape[0])
+            ax.plot(freqs, mean, color=color, linewidth=2, label=f'{title} (n={matrix.shape[0]})')
+            ax.fill_between(freqs, mean - sem, mean + sem, color=color, alpha=0.2)
+        ax.set_title(f'{label} Retrieval {roi} Baseline-corrected PAC', fontsize=18, fontweight='bold')
+        ax.set_xlabel('Amplitude Frequency (Hz)', fontsize=15, fontweight='bold')
+        ax.set_ylabel('PAC', fontsize=15, fontweight='bold')
+        ax.tick_params(axis='both', labelsize=12)
+        style_axis(ax)
+        ax.legend(frameon=False, fontsize=11)
+        fig.tight_layout()
+        fig.savefig(out_dir / f'{roi}_BaselineCorrectedPAC_retrieval_stim_vs_nostim.png', dpi=300, bbox_inches='tight')
+        finalize_figure(fig)
+
+
+def plot_quadrant_stim_memory(data, out_dir, label='BLAES'):
+    freqs = data['freqs_post']
+    memory_dicts = {
+        'NoStim Remembered': data['post_nostim_rem'],
+        'NoStim Forgotten': data['post_nostim_forg'],
+        'Stim Remembered': data['post_stim_rem'],
+        'Stim Forgotten': data['post_stim_forg'],
+    }
+    if freqs is None or not any(memory_dicts.values()):
+        return
+    all_rois = sorted(set().union(*[d.keys() for d in memory_dicts.values() if d]))
+    roi_colors = make_roi_color_map(all_rois)
+    fig, axes = plt.subplots(2, 2, figsize=(18, 11), sharex=True, sharey=True)
+    plotted = set()
+    for ax, condition in zip(axes.flatten(), ['NoStim Remembered', 'NoStim Forgotten', 'Stim Remembered', 'Stim Forgotten']):
+        roi_dict = memory_dicts[condition]
+        for roi in all_rois:
+            if roi not in roi_dict:
+                continue
+            matrix = np.array(list(roi_dict[roi].values()), dtype=np.float64)
+            mean = matrix.mean(axis=0)
+            std = matrix.std(axis=0)
+            label_text = f'{roi} ({matrix.shape[0]})' if roi not in plotted else None
+            plotted.add(roi)
+            color = roi_colors.get(roi, 'gray')
+            ax.plot(freqs, mean, color=color, linewidth=2, label=label_text)
+            ax.fill_between(freqs, mean - std, mean + std, color=color, alpha=0.18)
+        ax.set_title(condition, fontsize=16, fontweight='bold')
+        ax.tick_params(axis='both', labelsize=11)
+        style_axis(ax)
+    fig.text(0.5, 0.04, 'Amplitude Frequency (Hz)', ha='center', fontsize=16, fontweight='bold')
+    fig.text(0.04, 0.5, 'PAC', va='center', rotation='vertical', fontsize=16, fontweight='bold')
+    fig.suptitle(f'{label} Retrieval PAC by Stim x Memory', fontsize=20, fontweight='bold')
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(handles, labels, bbox_to_anchor=(0.84, 0.5), loc='center left', fontsize=8.5, frameon=False)
+    fig.tight_layout(rect=[0.06, 0.06, 0.82, 0.94])
+    fig.savefig(out_dir / 'Quadrant_StimMemory_PAC_retrieval.png', dpi=300, bbox_inches='tight')
+    finalize_figure(fig)
+
+
+def plot_per_roi_quadrant(data, out_dir, label='BLAES'):
+    freqs = data['freqs_post']
+    quadrant_dicts = {
+        'Stim Remembered': data['post_stim_rem'],
+        'Stim Forgotten': data['post_stim_forg'],
+        'NoStim Remembered': data['post_nostim_rem'],
+        'NoStim Forgotten': data['post_nostim_forg'],
+    }
+    if freqs is None or not any(quadrant_dicts.values()):
+        return
+    roi_positions = {
+        'Stim Remembered': (0, 0),
+        'Stim Forgotten': (0, 1),
+        'NoStim Remembered': (1, 0),
+        'NoStim Forgotten': (1, 1),
+    }
+    all_rois = sorted(set().union(*[d.keys() for d in quadrant_dicts.values() if d]))
+    for roi in all_rois:
+        roi_subjects = set()
+        for condition_dict in quadrant_dicts.values():
+            roi_subjects.update(condition_dict.get(roi, {}))
+        if not roi_subjects:
+            continue
+        subject_colors = make_subject_color_map(roi_subjects)
+        fig, axes = plt.subplots(2, 2, figsize=(15, 11), sharex=True, sharey=True)
+        has_data = False
+        for condition, roi_dict in quadrant_dicts.items():
+            r, c = roi_positions[condition]
+            ax = axes[r, c]
+            subject_dict = roi_dict.get(roi, {})
+            if not subject_dict:
+                ax.set_title(f'{condition} (no data)', fontsize=13, fontweight='bold')
+                ax.set_axis_off()
+                continue
+            has_data = True
+            for patient, values in sorted(subject_dict.items()):
+                ax.plot(freqs, values, color=subject_colors[patient], linewidth=1.5, label=patient, alpha=0.8)
+            ax.set_title(condition, fontsize=13, fontweight='bold')
+            ax.tick_params(axis='both', labelsize=10)
+            style_axis(ax)
+        if has_data:
+            fig.suptitle(f'{label} Retrieval {roi} PAC by Patient and Memory', fontsize=18, fontweight='bold')
+            fig.text(0.5, 0.04, 'Amplitude Frequency (Hz)', ha='center', fontsize=14, fontweight='bold')
+            fig.text(0.04, 0.5, 'PAC', va='center', rotation='vertical', fontsize=14, fontweight='bold')
+            handles, labels = collect_unique_legend_items(axes.flatten())
+            if handles:
+                fig.legend(handles, labels, bbox_to_anchor=(0.88, 0.5), loc='center left', fontsize=7.5, frameon=False)
+            fig.tight_layout(rect=[0.06, 0.06, 0.84, 0.92])
+            fig.savefig(out_dir / f'IndivQuadrant_{roi}_StimMemory_PAC_retrieval.png', dpi=300, bbox_inches='tight')
+        finalize_figure(fig)
+
+
+def plot_bc_bar_by_memory(data, out_dir, label='BLAES'):
+    freqs = data['freqs_diff']
+    if freqs is None:
+        return
+    remembered_df = compute_condition_diff_df(data['diff_stim_rem'], data['diff_nostim_rem'], freqs, PAC_BANDS)
+    forgotten_df = compute_condition_diff_df(data['diff_stim_forg'], data['diff_nostim_forg'], freqs, PAC_BANDS)
+    if remembered_df.empty and forgotten_df.empty:
+        return
+    if not remembered_df.empty:
+        remembered_df['memory_cond'] = 'remembered'
+    if not forgotten_df.empty:
+        forgotten_df['memory_cond'] = 'forgotten'
+    df_all = pd.concat([df for df in [remembered_df, forgotten_df] if not df.empty], ignore_index=True)
+    roi_order = sorted(df_all['Region'].unique())
+    gray_values = np.linspace(0.85, 0.45, len(roi_order))
+    palette = {roi: (gray, gray, gray) for roi, gray in zip(roi_order, gray_values)}
+    for memory_cond, memory_label in [('remembered', 'Remembered'), ('forgotten', 'Forgotten')]:
+        subset = df_all[df_all['memory_cond'] == memory_cond]
+        if subset.empty:
+            continue
+        for band in [name for name in PAC_BANDS if name in subset['band'].unique()]:
+            band_df = subset[subset['band'] == band].copy()
+            if band_df.empty:
+                continue
+            fig, ax = plt.subplots(figsize=(13, 8.5))
+            sns.barplot(
+                data=band_df,
+                x='Region',
+                y='mean_pac_diff',
+                hue='Region',
+                palette=palette,
+                errorbar='se',
+                dodge=False,
+                legend=False,
+                order=roi_order,
+                ax=ax,
+            )
+            sns.stripplot(
+                data=band_df,
+                x='Region',
+                y='mean_pac_diff',
+                color='black',
+                alpha=0.55,
+                jitter=0.18,
+                order=roi_order,
+                ax=ax,
+            )
+            ax.axhline(0, color='gray', linewidth=1.2)
+            ax.set_xlabel('')
+            ax.set_ylabel('Baseline-corrected PAC Diff', fontsize=16, fontweight='bold')
+            ax.set_title(band, fontsize=18, fontweight='bold')
+            ax.tick_params(axis='x', labelsize=10, rotation=45)
+            ax.tick_params(axis='y', labelsize=12)
+            style_axis(ax, hide_top_right=True)
+            fig.suptitle(f'{label} Retrieval PAC Diff, {memory_label} Trials', fontsize=20, fontweight='bold', y=0.98)
+            fig.tight_layout(rect=[0, 0, 1, 0.92])
+            fig.savefig(out_dir / f'Bargraph_PAC_diff_{memory_cond}_retrieval_{band.lower().replace(" ", "_")}.png', dpi=300, bbox_inches='tight')
+            finalize_figure(fig)
+
+
+def plot_bc_remembered_forgotten(data, out_dir, label='BLAES'):
+    freqs = data['freqs_diff']
+    if freqs is None:
+        return
+    memory_maps = {
+        'Remembered': {'stim': data['diff_stim_rem'], 'nostim': data['diff_nostim_rem']},
+        'Forgotten': {'stim': data['diff_stim_forg'], 'nostim': data['diff_nostim_forg']},
+    }
+    all_rois = set()
+    for mapping in memory_maps.values():
+        all_rois.update(mapping['stim'].keys())
+        all_rois.update(mapping['nostim'].keys())
+    for roi in sorted(all_rois):
+        has_data = False
+        fig, axes = plt.subplots(1, 2, figsize=(17, 6.5), sharey=True)
+        for ax, memory_label in zip(axes, ['Remembered', 'Forgotten']):
+            for condition_name, condition_dict, color in [
+                ('No Stim', memory_maps[memory_label]['nostim'], '#1f77b4'),
+                ('Stim', memory_maps[memory_label]['stim'], '#d62728'),
+            ]:
+                subject_dict = condition_dict.get(roi, {})
+                if not subject_dict:
+                    continue
+                has_data = True
+                matrix = np.array(list(subject_dict.values()), dtype=np.float64)
+                mean = matrix.mean(axis=0)
+                sem = matrix.std(axis=0) / np.sqrt(matrix.shape[0])
+                ax.plot(freqs, mean, color=color, linewidth=2, label=f'{condition_name} (n={matrix.shape[0]})')
+                ax.fill_between(freqs, mean - sem, mean + sem, color=color, alpha=0.2)
+            ax.set_title(f'{memory_label} Trials', fontsize=15, fontweight='bold')
+            ax.set_xlabel('Amplitude Frequency (Hz)', fontsize=14, fontweight='bold')
+            ax.tick_params(axis='both', labelsize=11)
+            style_axis(ax)
+        axes[0].set_ylabel('PAC', fontsize=14, fontweight='bold')
+        if has_data:
+            handles, labels = axes[0].get_legend_handles_labels()
+            fig.legend(handles, labels, bbox_to_anchor=(0.92, 0.5), loc='center left', fontsize=10, frameon=False)
+            fig.suptitle(f'{label} Retrieval {roi} Baseline-corrected PAC', fontsize=18, fontweight='bold')
+            fig.tight_layout(rect=[0, 0, 0.9, 0.93])
+            fig.savefig(out_dir / f'{roi}_Baseline_Adjusted_PAC_RememberedForgotten_retrieval.png', dpi=300, bbox_inches='tight')
+        finalize_figure(fig)
+
+
+# %% [markdown]
+# ## Summary table exports
+
+# %%
+def export_summary_tables(data, out_dir):
+    ensure_dir(out_dir)
+
+    post_rows = []
+    post_rows.extend(build_band_summary_rows(data['post_all'], data['freqs_post'], PAC_BANDS, 'overall', 'PAC'))
+    post_rows.extend(build_band_summary_rows(data['post_stim'], data['freqs_post'], PAC_BANDS, 'stim', 'PAC'))
+    post_rows.extend(build_band_summary_rows(data['post_nostim'], data['freqs_post'], PAC_BANDS, 'nostim', 'PAC'))
+    post_rows.extend(build_band_summary_rows(data['post_stim_rem'], data['freqs_post'], PAC_BANDS, 'stim_remembered', 'PAC'))
+    post_rows.extend(build_band_summary_rows(data['post_stim_forg'], data['freqs_post'], PAC_BANDS, 'stim_forgotten', 'PAC'))
+    post_rows.extend(build_band_summary_rows(data['post_nostim_rem'], data['freqs_post'], PAC_BANDS, 'nostim_remembered', 'PAC'))
+    post_rows.extend(build_band_summary_rows(data['post_nostim_forg'], data['freqs_post'], PAC_BANDS, 'nostim_forgotten', 'PAC'))
+    if post_rows:
+        pd.DataFrame(post_rows).sort_values(['condition', 'Region', 'Patient', 'band']).to_csv(
+            out_dir / 'post_band_summary_retrieval.csv', index=False
+        )
+
+    diff_rows = []
+    diff_rows.extend(build_band_summary_rows(data['diff_stim'], data['freqs_diff'], PAC_BANDS, 'stim_bc', 'PAC'))
+    diff_rows.extend(build_band_summary_rows(data['diff_nostim'], data['freqs_diff'], PAC_BANDS, 'nostim_bc', 'PAC'))
+    diff_rows.extend(build_band_summary_rows(data['diff_stim_rem'], data['freqs_diff'], PAC_BANDS, 'stim_bc_remembered', 'PAC'))
+    diff_rows.extend(build_band_summary_rows(data['diff_stim_forg'], data['freqs_diff'], PAC_BANDS, 'stim_bc_forgotten', 'PAC'))
+    diff_rows.extend(build_band_summary_rows(data['diff_nostim_rem'], data['freqs_diff'], PAC_BANDS, 'nostim_bc_remembered', 'PAC'))
+    diff_rows.extend(build_band_summary_rows(data['diff_nostim_forg'], data['freqs_diff'], PAC_BANDS, 'nostim_bc_forgotten', 'PAC'))
+    if diff_rows:
+        pd.DataFrame(diff_rows).sort_values(['condition', 'Region', 'Patient', 'band']).to_csv(
+            out_dir / 'baseline_corrected_band_summary_retrieval.csv', index=False
+        )
+
+    stim_minus_nostim_df = compute_condition_diff_df(data['diff_stim'], data['diff_nostim'], data['freqs_diff'], PAC_BANDS)
+    if not stim_minus_nostim_df.empty:
+        stim_minus_nostim_df.sort_values(['Region', 'Patient', 'band']).to_csv(
+            out_dir / 'stim_minus_nostim_baseline_corrected_band_diff_retrieval.csv', index=False
+        )
+
+    if data['trial_count_rows']:
+        pd.concat(data['trial_count_rows'], ignore_index=True).sort_values(
+            ['Patient', 'Region', 'trial_type', 'memory_cond']
+        ).to_csv(out_dir / 'trial_counts_by_region_condition_retrieval.csv', index=False)
+
+
+# %% [markdown]
+# ## Main
+
+# %%
+def main():
+    if OUTPUT_DIR.exists():
+        shutil.rmtree(OUTPUT_DIR)
+    ensure_dir(OUTPUT_DIR)
+    ensure_dir(CSV_DIR)
+
+    print(f'Data path: {DATA_PATH}')
+    print(f'Output path: {OUTPUT_DIR}')
+    print(f'Found {len(PAC_FILES)} PAC Phase 3 files.')
+
+    data = load_blaes_retrieval_pac()
+
+    plot_pac_by_roi(data, OUTPUT_DIR)
+    plot_pac_by_patient(data, OUTPUT_DIR)
+    plot_stim_vs_nostim(data, OUTPUT_DIR)
+    plot_per_roi_patient_stim_nostim(data, OUTPUT_DIR)
+    plot_bc_bar_graph(data, OUTPUT_DIR)
+    plot_mi_difference_per_roi(data, OUTPUT_DIR)
+    plot_bc_per_roi(data, OUTPUT_DIR)
+    plot_quadrant_stim_memory(data, OUTPUT_DIR)
+    plot_per_roi_quadrant(data, OUTPUT_DIR)
+    plot_bc_bar_by_memory(data, OUTPUT_DIR)
+    plot_bc_remembered_forgotten(data, OUTPUT_DIR)
+    export_summary_tables(data, CSV_DIR)
+
+    print('PAC retrieval analysis complete.')
+
+
+if __name__ == '__main__':
+    main()
