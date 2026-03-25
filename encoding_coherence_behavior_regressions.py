@@ -13,6 +13,7 @@ Baseline functional connectivity measure:
 """
 
 import os
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -68,6 +69,13 @@ LOGIC_NOTE = (
 
 
 def ensure_dir(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def reset_dir(path: Path) -> Path:
+    if path.exists():
+        shutil.rmtree(path)
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -254,7 +262,7 @@ def plot_regression(df, stats_row, out_path: Path):
 
 
 def main():
-    ensure_dir(OUTPUT_DIR)
+    reset_dir(OUTPUT_DIR)
     behavior = load_behavior()
     all_data, composite_data = load_all_encoding_data()
     source_rois = regression_rois(all_data, composite_data)
