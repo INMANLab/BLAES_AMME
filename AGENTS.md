@@ -7,6 +7,12 @@ All outputs should go to outputs/ folder. Never write anywhere else
 # Libraries
 Never install libraries. Only use the existing python environment
 
+# Version Control
+After each time you update a script:
+
+1. Run `git add .`
+2. Run `git commit` with a useful message that clearly describes the change so the history is easy to follow and revert if needed
+
 # Combined Notebook -> Python Workflow
 When converting analysis notebooks in `to_combine/` into combined `.py` scripts:
 
