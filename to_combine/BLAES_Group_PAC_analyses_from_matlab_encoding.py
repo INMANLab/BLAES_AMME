@@ -566,35 +566,61 @@ def plot_mi_difference_per_roi(
     footer_text=None,
 ):
     freqs = data['freqs_diff']
-    stim_dict = data['diff_stim']
-    nostim_dict = data['diff_nostim']
-    if freqs is None or not stim_dict or not nostim_dict:
+    memory_maps = {
+        'Remembered': {'stim': data['diff_stim_rem'], 'nostim': data['diff_nostim_rem']},
+        'Forgotten': {'stim': data['diff_stim_forg'], 'nostim': data['diff_nostim_forg']},
+    }
+    if freqs is None or not any(mapping['stim'] or mapping['nostim'] for mapping in memory_maps.values()):
         return
-    for roi in sorted(set(stim_dict.keys()) | set(nostim_dict.keys())):
-        shared_subjects = sorted(set(stim_dict.get(roi, {})) & set(nostim_dict.get(roi, {})))
-        if not shared_subjects:
-            continue
-        diff_matrix = np.array(
-            [
-                np.asarray(stim_dict[roi][patient], dtype=np.float64) - np.asarray(nostim_dict[roi][patient], dtype=np.float64)
-                for patient in shared_subjects
-            ],
-            dtype=np.float64,
-        )
-        mean = diff_matrix.mean(axis=0)
-        sem = diff_matrix.std(axis=0) / np.sqrt(diff_matrix.shape[0])
 
-        fig, ax = plt.subplots(figsize=(10.5, 7))
-        ax.axvspan(PAC_BANDS['Slow gamma'][0], PAC_BANDS['Slow gamma'][1], color='#E8E8E8', alpha=1.0, zorder=0)
-        ax.axhline(0, color='red', linewidth=1.8, linestyle=(0, (4, 4)), zorder=1)
-        ax.plot(freqs, mean, color='#8E8E8E', linewidth=3, zorder=3)
-        ax.fill_between(freqs, mean - sem, mean + sem, color='#BDBDBD', alpha=0.85, zorder=2)
-        ax.set_xlabel('Amplitude Frequency (Hz)', fontsize=16, fontweight='bold')
-        ax.set_ylabel('MI Difference', fontsize=16, fontweight='bold')
-        ax.set_title(f'{label} Encoding {roi} MI Difference (Stim - No Stim)', fontsize=20, fontweight='bold')
-        ax.tick_params(axis='both', labelsize=12, width=1.8, length=6)
-        style_axis(ax, hide_top_right=True)
-        save_figure_output(fig, out_dir / filename_template.format(roi=roi), footer_text=footer_text)
+    all_rois = set()
+    for mapping in memory_maps.values():
+        all_rois.update(mapping['stim'].keys())
+        all_rois.update(mapping['nostim'].keys())
+
+    for roi in sorted(all_rois):
+        has_data = False
+        fig, axes = plt.subplots(1, 2, figsize=(16, 6.5), sharey=True)
+        for ax, memory_label in zip(axes, ['Remembered', 'Forgotten']):
+            stim_dict = memory_maps[memory_label]['stim']
+            nostim_dict = memory_maps[memory_label]['nostim']
+            shared_subjects = sorted(set(stim_dict.get(roi, {})) & set(nostim_dict.get(roi, {})))
+            if not shared_subjects:
+                ax.text(0.5, 0.5, 'No data', ha='center', va='center', fontsize=12)
+                ax.set_axis_off()
+                continue
+            has_data = True
+            diff_matrix = np.array(
+                [
+                    np.asarray(stim_dict[roi][patient], dtype=np.float64) - np.asarray(nostim_dict[roi][patient], dtype=np.float64)
+                    for patient in shared_subjects
+                ],
+                dtype=np.float64,
+            )
+            mean = diff_matrix.mean(axis=0)
+            sem = diff_matrix.std(axis=0) / np.sqrt(diff_matrix.shape[0])
+
+            ax.axvspan(PAC_BANDS['Slow gamma'][0], PAC_BANDS['Slow gamma'][1], color='#E8E8E8', alpha=1.0, zorder=0)
+            ax.axhline(0, color='red', linewidth=1.8, linestyle=(0, (4, 4)), zorder=1)
+            ax.plot(freqs, mean, color='#8E8E8E', linewidth=3, zorder=3)
+            ax.fill_between(freqs, mean - sem, mean + sem, color='#BDBDBD', alpha=0.85, zorder=2)
+            ax.set_title(f'{memory_label} Trials', fontsize=15, fontweight='bold')
+            ax.set_xlabel('Amplitude Frequency (Hz)', fontsize=15, fontweight='bold')
+            ax.tick_params(axis='both', labelsize=11, width=1.6, length=5)
+            style_axis(ax, hide_top_right=True)
+
+        if not has_data:
+            finalize_figure(fig)
+            continue
+
+        axes[0].set_ylabel('MI Difference', fontsize=15, fontweight='bold')
+        fig.suptitle(f'{label} Encoding {roi} MI Difference (Stim - No Stim)', fontsize=18, fontweight='bold')
+        save_figure_output(
+            fig,
+            out_dir / filename_template.format(roi=roi),
+            footer_text=footer_text,
+            rect=[0, 0, 1, 0.93],
+        )
 
 
 def plot_bc_per_roi(
