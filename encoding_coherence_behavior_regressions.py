@@ -53,6 +53,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = SCRIPT_DIR / "outputs" / "encoding_coherence_behavior_regressions"
 BEHAVIOR_CSV = SCRIPT_DIR / "AMMEBLAES_includedpts_firstsession_behavioral.csv"
 TARGET_COLUMN = "avg_stim_dprime_diff"
+TARGET_LABEL = "dprime difference"
 BAND_SPECS = {
     "theta": (4.0, 8.0),
     "slow_gamma": (35.0, 50.0),
@@ -64,7 +65,7 @@ BAND_LABELS = {
 LOGIC_NOTE = (
     "X-axis baseline FC: mean post_Freq encoding coherency across trials within patient and ROI, "
     "then mean within the selected band. Composite ROIs average patient mean spectra across source "
-    "BLA pairs before the band-average scalar is taken. Y-axis memory modulation: avg_stim_dprime_diff."
+    "BLA pairs before the band-average scalar is taken. Y-axis memory modulation: dprime difference."
 )
 
 
@@ -236,7 +237,7 @@ def plot_regression(df, stats_row, out_path: Path):
 
     band_label = BAND_LABELS[df["Band"].iloc[0]]
     ax.set_xlabel(f"Baseline Functional Connectivity ({band_label})", fontsize=13, fontweight="bold")
-    ax.set_ylabel("Memory Modulation (avg_stim_dprime_diff)", fontsize=13, fontweight="bold")
+    ax.set_ylabel(f"Memory Modulation ({TARGET_LABEL})", fontsize=13, fontweight="bold")
     ax.set_title(
         f"Encoding Coherence vs Memory Modulation: {df['Region'].iloc[0]} - {band_label}",
         fontsize=15,
@@ -269,9 +270,9 @@ def plot_behavior_histogram(behavior_df, out_path: Path):
     values = values[np.isfinite(values)]
     bins = min(12, max(5, int(np.sqrt(len(values)))))
     ax.hist(values, bins=bins, color="#4c78a8", edgecolor="white", alpha=0.9)
-    ax.set_xlabel("Memory Modulation (avg_stim_dprime_diff)", fontsize=13, fontweight="bold")
+    ax.set_xlabel(f"Memory Modulation ({TARGET_LABEL})", fontsize=13, fontweight="bold")
     ax.set_ylabel("Patient Count", fontsize=13, fontweight="bold")
-    ax.set_title("Distribution of avg_stim_dprime_diff", fontsize=15, fontweight="bold")
+    ax.set_title(f"Distribution of {TARGET_LABEL}", fontsize=15, fontweight="bold")
     ax.tick_params(axis="both", labelsize=11)
     fig.tight_layout()
     fig.savefig(out_path, dpi=300, bbox_inches="tight")
@@ -325,7 +326,7 @@ def main():
     summary_rows = []
 
     matched_behavior = joined[["Patient", TARGET_COLUMN]].drop_duplicates(subset=["Patient"]).sort_values("Patient")
-    plot_behavior_histogram(matched_behavior, hist_dir / "avg_stim_dprime_diff_histogram.png")
+    plot_behavior_histogram(matched_behavior, hist_dir / "dprime_difference_histogram.png")
 
     for roi in source_rois:
         for band_name in BAND_SPECS:
