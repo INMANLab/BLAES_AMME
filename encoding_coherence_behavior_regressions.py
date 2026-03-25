@@ -6,10 +6,10 @@ memory modulation (avg_stim_dprime_diff).
 Baseline functional connectivity measure:
 1. Within each patient and region pair, average post-stim encoding coherence
    across all available encoding trials to get one mean spectrum.
-2. Collapse that mean spectrum across frequency by taking the mean over all
-   available post_Freq columns to obtain one scalar baseline FC value.
+2. Collapse that mean spectrum within a target band to obtain one scalar
+   baseline FC value.
 3. For composite ROIs, first average the patient's mean spectra across source
-   BLA pairs, then take the frequency-average scalar.
+   BLA pairs, then take the band-average scalar.
 """
 
 import os
@@ -52,10 +52,18 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = SCRIPT_DIR / "outputs" / "encoding_coherence_behavior_regressions"
 BEHAVIOR_CSV = SCRIPT_DIR / "AMMEBLAES_includedpts_firstsession_behavioral.csv"
 TARGET_COLUMN = "avg_stim_dprime_diff"
+BAND_SPECS = {
+    "theta": (4.0, 8.0),
+    "slow_gamma": (35.0, 50.0),
+}
+BAND_LABELS = {
+    "theta": "Theta (4-8 Hz)",
+    "slow_gamma": "Slow Gamma (35-50 Hz)",
+}
 LOGIC_NOTE = (
     "X-axis baseline FC: mean post_Freq encoding coherency across trials within patient and ROI, "
-    "then mean across frequencies. Composite ROIs average patient mean spectra across source BLA pairs "
-    "before the frequency-average scalar is taken. Y-axis memory modulation: avg_stim_dprime_diff."
+    "then mean within the selected band. Composite ROIs average patient mean spectra across source "
+    "BLA pairs before the band-average scalar is taken. Y-axis memory modulation: avg_stim_dprime_diff."
 )
 
 
@@ -106,20 +114,26 @@ def regression_rois(all_data, composite_data):
     return sorted(set(original_rois) | set(composite_data["group_all_power"].keys()))
 
 
-def build_baseline_fc_table(group_all_power):
+def build_baseline_fc_table(group_all_power, freqs):
     rows = []
+    freqs = np.asarray(freqs, dtype=np.float64)
     for roi, subj_dict in group_all_power.items():
         for patient, spectrum in subj_dict.items():
             arr = np.asarray(spectrum, dtype=np.float64)
             if arr.size == 0:
                 continue
-            rows.append(
-                {
-                    "Patient": str(patient),
-                    "Region": roi,
-                    "baseline_fc": float(np.nanmean(arr)),
-                }
-            )
+            for band_name, (lo, hi) in BAND_SPECS.items():
+                mask = (freqs >= lo) & (freqs <= hi)
+                if not np.any(mask):
+                    continue
+                rows.append(
+                    {
+                        "Patient": str(patient),
+                        "Region": roi,
+                        "Band": band_name,
+                        "baseline_fc": float(np.nanmean(arr[mask])),
+                    }
+                )
     return pd.DataFrame(rows)
 
 
@@ -210,9 +224,14 @@ def plot_regression(df, stats_row, out_path: Path):
         y_fit = stats_row["intercept"] + stats_row["slope"] * x_sorted
         ax.plot(x_sorted, y_fit, color="#b22222", linewidth=2)
 
-    ax.set_xlabel("Baseline Functional Connectivity", fontsize=13, fontweight="bold")
+    band_label = BAND_LABELS[df["Band"].iloc[0]]
+    ax.set_xlabel(f"Baseline Functional Connectivity ({band_label})", fontsize=13, fontweight="bold")
     ax.set_ylabel("Memory Modulation (avg_stim_dprime_diff)", fontsize=13, fontweight="bold")
-    ax.set_title(f"Encoding Coherence vs Memory Modulation: {df['Region'].iloc[0]}", fontsize=15, fontweight="bold")
+    ax.set_title(
+        f"Encoding Coherence vs Memory Modulation: {df['Region'].iloc[0]} - {band_label}",
+        fontsize=15,
+        fontweight="bold",
+    )
     ax.tick_params(axis="both", labelsize=11)
 
     ax.text(
@@ -240,8 +259,8 @@ def main():
     all_data, composite_data = load_all_encoding_data()
     source_rois = regression_rois(all_data, composite_data)
 
-    base_df = build_baseline_fc_table(all_data["group_all_power"])
-    composite_df = build_baseline_fc_table(composite_data["group_all_power"])
+    base_df = build_baseline_fc_table(all_data["group_all_power"], all_data["freqs_post"])
+    composite_df = build_baseline_fc_table(composite_data["group_all_power"], composite_data["freqs_post"])
     fc_df = pd.concat([base_df, composite_df], ignore_index=True)
     fc_df = fc_df[fc_df["Region"].isin(source_rois)].copy()
 
@@ -254,27 +273,29 @@ def main():
     summary_rows = []
 
     for roi in source_rois:
-        roi_df = joined[joined["Region"] == roi].copy()
-        roi_df = roi_df.drop_duplicates(subset=["Patient"])
-        if len(roi_df) < 3:
-            continue
+        for band_name in BAND_SPECS:
+            roi_df = joined[(joined["Region"] == roi) & (joined["Band"] == band_name)].copy()
+            roi_df = roi_df.drop_duplicates(subset=["Patient"])
+            if len(roi_df) < 3:
+                continue
 
-        stats_row = fit_regression(roi_df)
-        stats_row["Region"] = roi
-        summary_rows.append(stats_row)
+            stats_row = fit_regression(roi_df)
+            stats_row["Region"] = roi
+            stats_row["Band"] = band_name
+            summary_rows.append(stats_row)
 
-        roi_csv = detail_dir / f"{roi}_baseline_fc_vs_memory_modulation.csv"
-        roi_df.sort_values("Patient").to_csv(roi_csv, index=False)
-        plot_regression(roi_df, stats_row, detail_dir / f"{roi}_baseline_fc_vs_memory_modulation.png")
+            roi_csv = detail_dir / f"{roi}_{band_name}_baseline_fc_vs_memory_modulation.csv"
+            roi_df.sort_values("Patient").to_csv(roi_csv, index=False)
+            plot_regression(roi_df, stats_row, detail_dir / f"{roi}_{band_name}_baseline_fc_vs_memory_modulation.png")
 
     if not summary_rows:
         raise RuntimeError("No regressions could be fit; check patient overlap and baseline connectivity variability.")
 
     summary_df = pd.DataFrame(summary_rows)[
-        ["Region", "status", "n", "slope", "intercept", "r", "r_squared", "p_value", "stderr", "intercept_stderr"]
-    ].sort_values("Region")
+        ["Region", "Band", "status", "n", "slope", "intercept", "r", "r_squared", "p_value", "stderr", "intercept_stderr"]
+    ].sort_values(["Region", "Band"])
     summary_df.to_csv(OUTPUT_DIR / "encoding_coherence_behavior_regression_summary.csv", index=False)
-    joined.sort_values(["Region", "Patient"]).to_csv(
+    joined.sort_values(["Region", "Band", "Patient"]).to_csv(
         OUTPUT_DIR / "encoding_coherence_behavior_regression_joined_data.csv",
         index=False,
     )
