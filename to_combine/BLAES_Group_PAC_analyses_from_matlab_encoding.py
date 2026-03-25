@@ -205,6 +205,14 @@ def compute_condition_diff_df(stim_dict, nostim_dict, freqs, bands, value_name='
     return pd.DataFrame(rows)
 
 
+def normalize_trial_type_amme(ttype):
+    if isinstance(ttype, str) and 'stim' in ttype.lower() and ttype.lower() != 'nostim':
+        return 'stim'
+    if isinstance(ttype, str) and ttype.lower() == 'nostim':
+        return 'nostim'
+    return None
+
+
 # %% [markdown]
 # ## Load and organize PAC data
 
@@ -232,8 +240,8 @@ def load_blaes_encoding_pac():
     for pac_file in PAC_FILES:
         df = pd.read_csv(pac_file)
 
-        required_cols = {'Patient', 'Region', 'stimulation', 'ret_response'}
-        if not required_cols.issubset(df.columns):
+        base_required_cols = {'Patient', 'Region', 'stimulation'}
+        if not base_required_cols.issubset(df.columns):
             print(f"Skipping {os.path.basename(pac_file)}; missing required columns.")
             continue
 
@@ -241,8 +249,17 @@ def load_blaes_encoding_pac():
         df['Region'] = df['Region'].map(clean_region_label)
         df['stimulation'] = pd.to_numeric(df['stimulation'], errors='coerce')
         df = df[df['stimulation'].isin([0, 1])].copy()
-        df['memory_cond'] = df['ret_response'].map(MEMORY_LABELS)
-        df = df[df['memory_cond'].isin(['remembered', 'forgotten'])].copy()
+        if 'ret_response' in df.columns:
+            df['memory_cond'] = df['ret_response'].map(MEMORY_LABELS)
+            df = df[df['memory_cond'].isin(['remembered', 'forgotten'])].copy()
+        elif 'test_yes_or_no' in df.columns:
+            if 'test_trial_type' in df.columns:
+                df['test_trial_type'] = df['test_trial_type'].apply(normalize_trial_type_amme)
+            df = df[df['test_yes_or_no'].isin(['yes', 'no'])].copy()
+            df['memory_cond'] = np.where(df['test_yes_or_no'] == 'yes', 'remembered', 'forgotten')
+        else:
+            print(f"Skipping {os.path.basename(pac_file)}; missing encoding PAC memory columns.")
+            continue
         df = df[~df['Region'].map(is_same_region_comparison)].copy()
         if df.empty:
             print(f"Skipping {os.path.basename(pac_file)}; no cross-region PAC rows after filtering.")
