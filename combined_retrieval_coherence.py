@@ -57,6 +57,16 @@ RESPONDER_PALETTE = {
     'Anti-responders': '#F79B62',
     'Unknown': '#7F7F7F',
 }
+BLA_ALLHPC = 'BLA_ALLHPC'
+BLA_MTL = 'BLA_MTL'
+COMPOSITE_ROIS = [BLA_ALLHPC, BLA_MTL]
+ALLHPC_PARTNERS = {'CA', 'DG', 'HPC'}
+COMPOSITE_LOGIC_TEXT = (
+    'Composite logic: average trial-level coherency within each original BLA pair for each '
+    'patient and condition, then average those spectra across available source pairs '
+    '(BLA-CA/BLA-DG/BLA-HPC for BLA_ALLHPC; all available BLA-to-non-BLA pairs for BLA_MTL). '
+    'Band means and Stim-NoStim or memory contrasts are computed after the composite spectrum is formed.'
+)
 
 CONNECTED_DOT_ROI_ORDER = [
     'BLA_CA', 'BLA_DG', 'BLA_EC', 'BLA_HPC', 'BLA_PRC', 'CA_DG', 'CA_EC',
@@ -95,6 +105,14 @@ def normalize_region_label(value):
         parts = sorted(parts)
     return '_'.join(parts)
 
+def bla_partner_region(roi):
+    if pd.isna(roi):
+        return None
+    parts = [part.strip() for part in str(roi).split('_') if part.strip()]
+    if len(parts) != 2 or 'BLA' not in parts:
+        return None
+    return parts[0] if parts[1] == 'BLA' else parts[1]
+
 def canonicalize_power_dict(power_dict):
     canonical = {}
     for region, subj_dict in (power_dict or {}).items():
@@ -128,6 +146,65 @@ def canonicalize_coherence_data(data):
     if 'mlmr_export_frames' in data:
         canonicalized['mlmr_export_frames'] = canonicalize_export_frames(data.get('mlmr_export_frames'))
     return canonicalized
+
+def build_bla_composite_region_dict(region_dict, excluded_substrings=None):
+    composites = {roi: {} for roi in COMPOSITE_ROIS}
+    for roi, subj_dict in (region_dict or {}).items():
+        roi = normalize_region_label(roi)
+        if roi in COMPOSITE_ROIS or roi_has_excluded_substring(roi, excluded_substrings):
+            continue
+        partner = bla_partner_region(roi)
+        if partner is None:
+            continue
+        for subject, values in subj_dict.items():
+            arr = np.asarray(values, dtype=np.float64)
+            composites[BLA_MTL].setdefault(subject, []).append(arr)
+            if partner in ALLHPC_PARTNERS:
+                composites[BLA_ALLHPC].setdefault(subject, []).append(arr)
+
+    collapsed = {}
+    for composite_roi, subj_dict in composites.items():
+        for subject, vecs in subj_dict.items():
+            collapsed.setdefault(composite_roi, {})[subject] = np.nanmean(np.vstack(vecs), axis=0)
+    return collapsed
+
+def build_bla_composite_data(data):
+    composite_data = {
+        'freqs_post': data.get('freqs_post'),
+        'freqs_diff': data.get('freqs_diff'),
+        'has_memory': data.get('has_memory', False),
+        'use_memory_collapsed_overall': data.get('use_memory_collapsed_overall', False),
+        'overall_plot_exclude_substrings': set(),
+        'stim_plot_exclude_substrings': set(),
+        'memory_plot_exclude_substrings': set(),
+        'bc_plot_exclude_substrings': set(),
+        'has_bc_quadrant_plot': data.get('has_bc_quadrant_plot', False),
+        'has_connected_dots_plot': data.get('has_connected_dots_plot', False),
+        'mlmr_export_frames': [],
+    }
+
+    post_key_exclusions = {
+        'group_all_power': data.get('overall_plot_exclude_substrings', set()),
+        'stim_power': data.get('stim_plot_exclude_substrings', set()),
+        'nostim_power': data.get('stim_plot_exclude_substrings', set()),
+        'stim_rem': data.get('memory_plot_exclude_substrings', set()),
+        'stim_forg': data.get('memory_plot_exclude_substrings', set()),
+        'nostim_rem': data.get('memory_plot_exclude_substrings', set()),
+        'nostim_forg': data.get('memory_plot_exclude_substrings', set()),
+    }
+    diff_key_exclusions = {
+        'bc_stim': data.get('bc_plot_exclude_substrings', set()),
+        'bc_nostim': data.get('bc_plot_exclude_substrings', set()),
+        'bc_stim_rem': data.get('bc_plot_exclude_substrings', set()),
+        'bc_stim_forg': data.get('bc_plot_exclude_substrings', set()),
+        'bc_nostim_rem': data.get('bc_plot_exclude_substrings', set()),
+        'bc_nostim_forg': data.get('bc_plot_exclude_substrings', set()),
+    }
+
+    for key, excluded_substrings in {**post_key_exclusions, **diff_key_exclusions}.items():
+        composite_data[key] = build_bla_composite_region_dict(data.get(key, {}), excluded_substrings)
+
+    return composite_data
 
 def apply_subject_region_exclusions(df, exclude_map):
     if not exclude_map or 'Patient' not in df.columns or 'Region' not in df.columns:
@@ -1377,6 +1454,44 @@ def generate_memory_plots(data, out_dir, label):
     plot_connected_dots(data, out_dir, label)
 
 
+def write_bla_composite_logic_note(out_dir):
+    note_path = os.path.join(out_dir, 'BLAComposite_logic.txt')
+    with open(note_path, 'w', encoding='utf-8') as handle:
+        handle.write(COMPOSITE_LOGIC_TEXT + '\n')
+    return note_path
+
+
+def move_prefixed_outputs(src_dir, dest_dir, prefix='BLAComposite_'):
+    for name in sorted(os.listdir(src_dir)):
+        src_path = os.path.join(src_dir, name)
+        if not os.path.isfile(src_path):
+            continue
+        dest_path = os.path.join(dest_dir, f'{prefix}{name}')
+        if os.path.exists(dest_path):
+            os.remove(dest_path)
+        os.replace(src_path, dest_path)
+
+
+def generate_bla_composite_plots(data, out_dir, label):
+    composite_data = build_bla_composite_data(data)
+    has_composites = any(composite_data.get(key) for key in [
+        'group_all_power', 'stim_power', 'nostim_power', 'bc_stim', 'bc_nostim',
+        'stim_rem', 'stim_forg', 'nostim_rem', 'nostim_forg',
+        'bc_stim_rem', 'bc_stim_forg', 'bc_nostim_rem', 'bc_nostim_forg',
+    ])
+    if not has_composites:
+        return
+
+    write_bla_composite_logic_note(out_dir)
+    tmp_dir = os.path.join(out_dir, '_bla_composite_tmp')
+    reset_dir(tmp_dir)
+    print(f"  Generating BLA composite plots for {label}...")
+    generate_common_plots(composite_data, tmp_dir, f'{label} BLA Composite')
+    generate_memory_plots(composite_data, tmp_dir, f'{label} BLA Composite')
+    move_prefixed_outputs(tmp_dir, out_dir)
+    shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
 if __name__ == '__main__':
     print("=" * 60)
     print("Combined Group Coherence Analysis - Retrieval")
@@ -1396,9 +1511,11 @@ if __name__ == '__main__':
 
     generate_common_plots(blaes, blaes_dir, 'BLAES')
     generate_memory_plots(blaes, blaes_dir, 'BLAES')
+    generate_bla_composite_plots(blaes, blaes_dir, 'BLAES')
 
     generate_common_plots(amme, amme_dir, 'AMME')
     generate_memory_plots(amme, amme_dir, 'AMME')
+    generate_bla_composite_plots(amme, amme_dir, 'AMME')
 
     # Merge for "all"
     print("\nMerging data for all-combined analysis...")
@@ -1474,6 +1591,7 @@ if __name__ == '__main__':
 
     generate_common_plots(all_data, all_dir, 'All')
     generate_memory_plots(all_data, all_dir, 'All')
+    generate_bla_composite_plots(all_data, all_dir, 'All')
 
     print("\n" + "=" * 60)
     print("Done! Retrieval coherence outputs saved to:", OUTPUT_BASE)
