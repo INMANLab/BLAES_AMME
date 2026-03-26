@@ -127,10 +127,10 @@ def main():
     print(f'Found {len(PAC_FILES)} PAC Phase 1 files.')
 
     grouped = load_grouped_encoding_pac_data()
-    reset_dir(OUTPUT_BASE)
+    ensure_dir(OUTPUT_BASE)
     combined_data = grouped['all']
     combined_label = 'Combined AMME-BLAES'
-    out_dir = ensure_dir(OUTPUT_BASE / 'all')
+    out_dir = reset_dir(OUTPUT_BASE / 'all')
     csv_dir = ensure_dir(out_dir / 'csvs')
     generate_common_plots(combined_data, out_dir, combined_label)
     generate_memory_plots(combined_data, out_dir, combined_label)
