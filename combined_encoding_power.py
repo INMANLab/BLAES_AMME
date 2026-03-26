@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib
+from combined_power_common import ALLHPC, MTL, COMPOSITE_LOGIC_TEXT, augment_with_power_composites
 
 def running_in_notebook():
     try:
@@ -59,13 +60,15 @@ RESPONDER_PALETTE = {
 }
 
 ROI_COLORS_SPEC = {
-    'BLA': 'teal', 'PRC': '#E61C59', 'EC': '#8A2BE2',
-    'PHG': 'blue', 'CA': 'black', 'DG': 'skyblue', 'HPC': 'orange',
+    'BLA': 'teal', ALLHPC: '#5B4B8A', MTL: '#2E8B57',
+    'PRC': '#E61C59', 'EC': '#8A2BE2', 'PHG': 'blue',
+    'CA': 'black', 'DG': 'skyblue', 'HPC': 'orange',
 }
 
 ROI_COLORS_BAR = {
-    'PRC': '#FFC0CB', 'BLA': '#008080', 'EC': '#800080',
-    'PHG': '#0000FF', 'CA': '#00CED1', 'DG': '#87CEEB', 'HPC': '#FFA500',
+    'BLA': '#008080', ALLHPC: '#5B4B8A', MTL: '#2E8B57',
+    'CA': '#00CED1', 'DG': '#87CEEB', 'HPC': '#FFA500',
+    'EC': '#800080', 'PHG': '#0000FF', 'PRC': '#FFC0CB',
 }
 
 BLAES_ENCODING_REGION_EXCLUSIONS = {
@@ -320,6 +323,190 @@ def compute_diff_df(stim_d, nostim_d, freqs, ranges):
                              'mean_power_diff': spv[mask].mean() - npv[mask].mean()})
     return pd.DataFrame(rows)
 
+def compute_condition_band_df(stim_d, nostim_d, freqs, ranges, exclude_rois=None):
+    rows = []
+    exclude_rois = set(exclude_rois or set())
+    all_rois = sorted(set(stim_d.keys()) | set(nostim_d.keys()))
+    for roi in all_rois:
+        if roi.startswith('PNAS') or roi in exclude_rois:
+            continue
+        for subj in sorted(set(stim_d.get(roi, {})) & set(nostim_d.get(roi, {}))):
+            spv = np.asarray(stim_d[roi][subj], dtype=np.float64)
+            npv = np.asarray(nostim_d[roi][subj], dtype=np.float64)
+            for bn, (lo, hi) in ranges.items():
+                mask = (freqs >= lo) & (freqs <= hi)
+                rows.append({
+                    'Patient': subj,
+                    'Region': roi,
+                    'power_range': bn,
+                    'stim': spv[mask].mean(),
+                    'nostim': npv[mask].mean(),
+                })
+    return pd.DataFrame(rows)
+
+def plot_grouped_condition_bars(df, out_dir, label, phase_label, filename_template, title_suffix):
+    if df.empty:
+        return
+    band_order = [band for band in POWER_RANGES if band in df['power_range'].unique()]
+    if not band_order:
+        band_order = sorted(df['power_range'].unique())
+    patients = sorted(df['Patient'].unique())
+    filled_markers = ['o', 's', '^', 'D', 'v', 'P', 'X', '*', '<', '>', 'h', '8', 'p', 'H', 'd']
+    marker_styles = ([(m, True) for m in filled_markers] +
+                     [(m, False) for m in filled_markers] +
+                     [('1', True), ('2', True), ('3', True), ('4', True),
+                      ('+', True), ('x', True), ('|', True), ('_', True)] +
+                     [(f'${i}$', True) for i in range(1, 11)])
+    patient_markers = {p: marker_styles[i] for i, p in enumerate(patients)}
+    bar_colors = {'nostim': '#1f77b4', 'stim': '#d62728'}
+
+    for band in band_order:
+        df_band = df[df['power_range'] == band]
+        if df_band.empty:
+            continue
+        roi_order = [r for r in ROI_COLORS_BAR if r in df_band['Region'].unique()]
+        if not roi_order:
+            roi_order = sorted(df_band['Region'].unique())
+        if not roi_order:
+            continue
+
+        fig, ax = plt.subplots(figsize=(16, 11))
+        x_base = np.arange(len(roi_order))
+        bar_width = 0.34
+        offsets = {'nostim': -bar_width / 2, 'stim': bar_width / 2}
+
+        for i, roi in enumerate(roi_order):
+            roi_df = df_band[df_band['Region'] == roi]
+            for trial in ['nostim', 'stim']:
+                vals = roi_df[trial].dropna()
+                if len(vals) == 0:
+                    continue
+                mean = vals.mean()
+                sem = vals.std(ddof=1) / np.sqrt(len(vals)) if len(vals) > 1 else 0
+                ax.bar(
+                    x_base[i] + offsets[trial],
+                    mean,
+                    width=bar_width,
+                    color=bar_colors[trial],
+                    edgecolor='black',
+                    linewidth=1.2,
+                    yerr=sem,
+                    capsize=4,
+                    zorder=1,
+                )
+
+        for i, roi in enumerate(roi_order):
+            roi_df = df_band[df_band['Region'] == roi]
+            for _, row in roi_df.iterrows():
+                x_ns = x_base[i] + offsets['nostim']
+                x_s = x_base[i] + offsets['stim']
+                ax.plot([x_ns, x_s], [row['nostim'], row['stim']], color='black', alpha=0.35, linewidth=1)
+                marker, filled = patient_markers[row['Patient']]
+                if filled:
+                    ax.scatter(x_ns, row['nostim'], marker=marker, color='black', alpha=0.65, s=55, zorder=3)
+                    ax.scatter(x_s, row['stim'], marker=marker, color='black', alpha=0.95, s=55, zorder=3)
+                else:
+                    ax.scatter(
+                        x_ns,
+                        row['nostim'],
+                        marker=marker,
+                        facecolors='white',
+                        edgecolors='black',
+                        linewidths=1.1,
+                        alpha=0.85,
+                        s=60,
+                        zorder=3,
+                    )
+                    ax.scatter(
+                        x_s,
+                        row['stim'],
+                        marker=marker,
+                        facecolors='white',
+                        edgecolors='black',
+                        linewidths=1.3,
+                        alpha=1.0,
+                        s=60,
+                        zorder=3,
+                    )
+
+        ax.set_xticks(x_base)
+        ax.set_xticklabels(roi_order, fontsize=14, fontweight='bold')
+        ax.tick_params(axis='x', labelsize=14, width=2, length=6)
+        ax.tick_params(axis='y', labelsize=14, width=2, length=6)
+        ax.axhline(0, color='grey')
+        ax.set_ylabel('Mean Baseline-Corrected Power (dB)', fontsize=17, fontweight='bold')
+        fig.suptitle(f'{label} {phase_label} Baseline-Corrected Power - {title_suffix}', fontsize=22, fontweight='bold', y=0.965)
+        ax.set_title(band, fontsize=18, fontweight='bold')
+
+        y_values = pd.concat([df_band['nostim'], df_band['stim']], ignore_index=True).dropna()
+        if not y_values.empty:
+            y_min = y_values.min()
+            y_max = y_values.max()
+            if np.isclose(y_min, y_max):
+                ax.set_ylim(y_min - 0.1, y_max + 0.1)
+            else:
+                y_pad = 0.25 * (y_max - y_min)
+                ax.set_ylim(y_min - y_pad, y_max + y_pad)
+
+        stim_legend = [
+            Line2D([0], [0], color=bar_colors['stim'], lw=8, label='Stim'),
+            Line2D([0], [0], color=bar_colors['nostim'], lw=8, label='No Stim'),
+        ]
+        fig.legend(
+            handles=stim_legend,
+            loc='upper center',
+            bbox_to_anchor=(0.50, 0.925),
+            ncol=2,
+            frameon=False,
+            fontsize=12,
+            title='Condition',
+            title_fontsize=13,
+            handlelength=1.8,
+            handletextpad=0.6,
+            columnspacing=1.2,
+            borderaxespad=0.2,
+        )
+
+        patient_handles = [
+            Line2D(
+                [0], [0],
+                marker=patient_markers[p][0],
+                color='black',
+                linestyle='None',
+                markerfacecolor='black' if patient_markers[p][1] else 'white',
+                markeredgecolor='black',
+                markeredgewidth=1.1,
+                markersize=8,
+                label=str(p),
+            )
+            for p in sorted(df_band['Patient'].unique())
+        ]
+        fig.legend(
+            handles=patient_handles,
+            loc='center left',
+            bbox_to_anchor=(0.81, 0.50),
+            ncol=2,
+            columnspacing=0.9,
+            handletextpad=0.4,
+            labelspacing=0.45,
+            frameon=False,
+            fontsize=10,
+            title='Patient',
+            title_fontsize=12,
+        )
+        fig.text(
+            0.015,
+            0.015,
+            'Method: For each patient, ROI, and band, separate no-stim and stim means are computed from baseline-corrected spectra. Bars show across-patient means with SEM and dots show patient values.',
+            ha='left',
+            va='bottom',
+            fontsize=9,
+            wrap=True,
+        )
+        fig.subplots_adjust(left=0.10, right=0.78, bottom=0.15, top=0.86)
+        plt.savefig(os.path.join(out_dir, band_filename(filename_template, band)), bbox_inches='tight', dpi=300)
+        finalize_figure(fig)
+
 def collapse_power_across_memory_conditions(data):
     """Match notebook logic: average each subject's available stim x memory spectra."""
     collapsed = {}
@@ -479,10 +666,14 @@ def load_blaes_encoding():
         'group_all_power': {}, 'stim_power': {}, 'nostim_power': {},
         'bc_stim': {}, 'bc_nostim': {},
         'freqs_post': None, 'freqs_diff': None,
-        'has_memory': False,
+        'has_memory': True,
         'use_memory_collapsed_overall': False,
         'bc_bar_exclude_rois': {'HPC'},
         'bc_memory_collapsed_exclude_rois': set(),
+        'stim_rem': {}, 'stim_forg': {},
+        'nostim_rem': {}, 'nostim_forg': {},
+        'bc_stim_rem': {}, 'bc_stim_forg': {},
+        'bc_nostim_rem': {}, 'bc_nostim_forg': {},
         'mlmr_export_frames': [],
     }
 
@@ -506,6 +697,10 @@ def load_blaes_encoding():
         df = apply_subject_region_exclusions(df, BLAES_ENCODING_REGION_EXCLUSIONS)
         if df.empty:
             continue
+        df = df[df['yes_or_no'].isin(['yes', 'no'])].copy()
+        if df.empty:
+            continue
+        df['memory_cond'] = np.where(df['yes_or_no'] == 'yes', 'remembered', 'forgotten')
 
         freq_cols = sorted_freq_cols(df, 'post_Freq_')
         if not freq_cols:
@@ -528,6 +723,16 @@ def load_blaes_encoding():
             for _, row in df_s.groupby(['Patient', 'Region'])[freq_cols].mean().reset_index().iterrows():
                 data[key].setdefault(row['Region'], {})[row['Patient']] = row[freq_cols].values.astype(np.float64)
 
+        grouped_mem = df.groupby(['Patient', 'Region', 'stimulation', 'memory_cond'])[freq_cols].mean().reset_index()
+        mem_key_map = {
+            (1, 'remembered'): 'stim_rem', (1, 'forgotten'): 'stim_forg',
+            (0, 'remembered'): 'nostim_rem', (0, 'forgotten'): 'nostim_forg',
+        }
+        for _, row in grouped_mem.iterrows():
+            key = mem_key_map.get((int(row['stimulation']), row['memory_cond']))
+            if key:
+                data[key].setdefault(row['Region'], {})[row['Patient']] = row[freq_cols].values.astype(np.float64)
+
         # Baseline-corrected
         diff_cols = sorted_freq_cols(df, 'diff_Freq_')
         if diff_cols:
@@ -543,7 +748,17 @@ def load_blaes_encoding():
                 key = 'bc_stim' if int(row['stimulation']) == 1 else 'bc_nostim'
                 data[key].setdefault(row['Region'], {})[row['Patient']] = row[diff_cols].values.astype(np.float64)
 
-    return data
+            grouped_bc_mem = df.groupby(['Patient', 'Region', 'stimulation', 'memory_cond'])[diff_cols].mean().reset_index()
+            bc_key_map = {
+                (1, 'remembered'): 'bc_stim_rem', (1, 'forgotten'): 'bc_stim_forg',
+                (0, 'remembered'): 'bc_nostim_rem', (0, 'forgotten'): 'bc_nostim_forg',
+            }
+            for _, row in grouped_bc_mem.iterrows():
+                key = bc_key_map.get((int(row['stimulation']), row['memory_cond']))
+                if key:
+                    data[key].setdefault(row['Region'], {})[row['Patient']] = row[diff_cols].values.astype(np.float64)
+
+    return augment_with_power_composites(data)
 
 
 # =========================================================================
@@ -643,7 +858,7 @@ def load_amme_encoding():
                 if k:
                     data[k].setdefault(row['Region'], {})[row['Patient']] = row[diff_cols].values.astype(np.float64)
 
-    return data
+    return augment_with_power_composites(data)
 
 
 # =========================================================================
@@ -832,6 +1047,15 @@ def plot_bc_bar_graph(data, out_dir, label):
             dpi=300,
         )
         finalize_figure(fig)
+    df_condition = compute_condition_band_df(bcs, bcn, freqs, POWER_RANGES, data.get('bc_bar_exclude_rois', set()))
+    plot_grouped_condition_bars(
+        df_condition,
+        out_dir,
+        label,
+        'Encoding',
+        'StimVsNoStim_alltrials_encoding.png',
+        'All Trials',
+    )
     plot_responder_status_bargraph(
         df_diff[df_diff['Region'].isin(unique_rois)],
         out_dir,
@@ -996,6 +1220,8 @@ def plot_bc_bar_by_memory(data, out_dir, label):
     if df_all.empty:
         return
 
+    mem_source_lookup = {mem: (sd, nd) for mem, sd, nd in mem_pairs}
+
     # Split by memory
     for mem, mem_label in [('remembered', 'Remembered'), ('forgotten', 'Forgotten')]:
         df_mem = df_all[df_all['memory_cond'] == mem]
@@ -1052,6 +1278,16 @@ def plot_bc_bar_by_memory(data, out_dir, label):
                 dpi=300,
             )
             finalize_figure(fig)
+        sd, nd = mem_source_lookup[mem]
+        df_condition = compute_condition_band_df(sd, nd, freqs, POWER_RANGES)
+        plot_grouped_condition_bars(
+            df_condition,
+            out_dir,
+            label,
+            'Encoding',
+            f'StimVsNoStim_{mem}_encoding.png',
+            f'{mem_label} Trials',
+        )
 
 
 def plot_bc_remembered_forgotten(data, out_dir, label):
@@ -1151,13 +1387,21 @@ def build_all_encoding_data(blaes, amme):
         'bc_nostim': merge_dicts(blaes['bc_nostim'], amme['bc_nostim']),
         'freqs_post': all_freqs_post,
         'freqs_diff': all_freqs_diff,
-        'has_memory': False,
+        'has_memory': True,
         'use_memory_collapsed_overall': False,
         'bc_bar_exclude_rois': merge_sets(blaes.get('bc_bar_exclude_rois'), amme.get('bc_bar_exclude_rois')),
         'bc_memory_collapsed_exclude_rois': merge_sets(
             blaes.get('bc_memory_collapsed_exclude_rois'),
             amme.get('bc_memory_collapsed_exclude_rois'),
         ),
+        'stim_rem': merge_dicts(blaes.get('stim_rem', {}), amme.get('stim_rem', {})),
+        'stim_forg': merge_dicts(blaes.get('stim_forg', {}), amme.get('stim_forg', {})),
+        'nostim_rem': merge_dicts(blaes.get('nostim_rem', {}), amme.get('nostim_rem', {})),
+        'nostim_forg': merge_dicts(blaes.get('nostim_forg', {}), amme.get('nostim_forg', {})),
+        'bc_stim_rem': merge_dicts(blaes.get('bc_stim_rem', {}), amme.get('bc_stim_rem', {})),
+        'bc_stim_forg': merge_dicts(blaes.get('bc_stim_forg', {}), amme.get('bc_stim_forg', {})),
+        'bc_nostim_rem': merge_dicts(blaes.get('bc_nostim_rem', {}), amme.get('bc_nostim_rem', {})),
+        'bc_nostim_forg': merge_dicts(blaes.get('bc_nostim_forg', {}), amme.get('bc_nostim_forg', {})),
         'mlmr_export_frames': [
             df.copy()
             for df in blaes.get('mlmr_export_frames', []) + amme.get('mlmr_export_frames', [])
@@ -1176,7 +1420,7 @@ def build_all_encoding_data(blaes, amme):
     all_data['overall_patient_exclude_subjects'] = flatten_excluded_subjects(
         all_encoding_region_exclusions,
     )
-    return all_data
+    return augment_with_power_composites(all_data)
 
 
 # %% [markdown]
@@ -1236,6 +1480,26 @@ if __name__ == '__main__':
 # %%
 if __name__ == '__main__':
     plot_bc_per_roi(blaes, blaes_dir, 'BLAES')
+
+
+# %% [markdown]
+# BLAES Memory Plots
+
+# %%
+if __name__ == '__main__':
+    plot_quadrant_stim_memory(blaes, blaes_dir, 'BLAES')
+
+# %%
+if __name__ == '__main__':
+    plot_per_roi_quadrant(blaes, blaes_dir, 'BLAES')
+
+# %%
+if __name__ == '__main__':
+    plot_bc_bar_by_memory(blaes, blaes_dir, 'BLAES')
+
+# %%
+if __name__ == '__main__':
+    plot_bc_remembered_forgotten(blaes, blaes_dir, 'BLAES')
 
 
 # %% [markdown]
@@ -1313,6 +1577,26 @@ if __name__ == '__main__':
 # %%
 if __name__ == '__main__':
     plot_bc_per_roi(all_data, all_dir, 'All')
+
+
+# %% [markdown]
+# All Memory Plots
+
+# %%
+if __name__ == '__main__':
+    plot_quadrant_stim_memory(all_data, all_dir, 'All')
+
+# %%
+if __name__ == '__main__':
+    plot_per_roi_quadrant(all_data, all_dir, 'All')
+
+# %%
+if __name__ == '__main__':
+    plot_bc_bar_by_memory(all_data, all_dir, 'All')
+
+# %%
+if __name__ == '__main__':
+    plot_bc_remembered_forgotten(all_data, all_dir, 'All')
 
 
 # %% [markdown]

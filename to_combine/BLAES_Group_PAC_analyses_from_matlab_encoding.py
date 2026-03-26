@@ -222,6 +222,104 @@ def compute_condition_diff_df(stim_dict, nostim_dict, freqs, bands, value_name='
     return pd.DataFrame(rows)
 
 
+def compute_condition_band_df(stim_dict, nostim_dict, freqs, bands):
+    rows = []
+    if not stim_dict or not nostim_dict or freqs is None:
+        return pd.DataFrame(columns=['Patient', 'Region', 'band', 'stim', 'nostim'])
+    all_rois = sorted(set(stim_dict.keys()) | set(nostim_dict.keys()))
+    for roi in all_rois:
+        shared_subjects = sorted(set(stim_dict.get(roi, {})) & set(nostim_dict.get(roi, {})))
+        for patient in shared_subjects:
+            stim_vec = np.asarray(stim_dict[roi][patient], dtype=np.float64)
+            nostim_vec = np.asarray(nostim_dict[roi][patient], dtype=np.float64)
+            for band_name, (low, high) in bands.items():
+                mask = (freqs >= low) & (freqs <= high)
+                if not mask.any():
+                    continue
+                rows.append({
+                    'Patient': patient,
+                    'Region': roi,
+                    'band': band_name,
+                    'stim': float(np.nanmean(stim_vec[mask])),
+                    'nostim': float(np.nanmean(nostim_vec[mask])),
+                })
+    return pd.DataFrame(rows)
+
+
+def plot_grouped_condition_bars(
+    condition_df,
+    out_dir,
+    label,
+    phase_label,
+    filename_template,
+    title_suffix,
+    footer_text=None,
+):
+    if condition_df.empty:
+        return
+    roi_order = sorted(condition_df['Region'].unique())
+    if not roi_order:
+        return
+    bar_colors = {'nostim': '#1f77b4', 'stim': '#d62728'}
+
+    for band in [name for name in PAC_BANDS if name in condition_df['band'].unique()]:
+        band_df = condition_df[condition_df['band'] == band].copy()
+        if band_df.empty:
+            continue
+        fig, ax = plt.subplots(figsize=(13, 8.5))
+        x_base = np.arange(len(roi_order))
+        bar_width = 0.34
+        offsets = {'nostim': -bar_width / 2, 'stim': bar_width / 2}
+
+        for i, roi in enumerate(roi_order):
+            roi_df = band_df[band_df['Region'] == roi]
+            for trial in ['nostim', 'stim']:
+                vals = roi_df[trial].dropna()
+                if len(vals) == 0:
+                    continue
+                mean = vals.mean()
+                sem = vals.std(ddof=1) / np.sqrt(len(vals)) if len(vals) > 1 else 0
+                ax.bar(
+                    x_base[i] + offsets[trial],
+                    mean,
+                    width=bar_width,
+                    color=bar_colors[trial],
+                    edgecolor='black',
+                    linewidth=1.2,
+                    yerr=sem,
+                    capsize=4,
+                    zorder=1,
+                    label='No Stim' if trial == 'nostim' and i == 0 else ('Stim' if trial == 'stim' and i == 0 else None),
+                )
+
+        for i, roi in enumerate(roi_order):
+            roi_df = band_df[band_df['Region'] == roi]
+            for _, row in roi_df.iterrows():
+                x_ns = x_base[i] + offsets['nostim']
+                x_s = x_base[i] + offsets['stim']
+                ax.plot([x_ns, x_s], [row['nostim'], row['stim']], color='black', alpha=0.28, linewidth=1)
+                ax.scatter(x_ns, row['nostim'], color='black', alpha=0.65, s=38, zorder=3)
+                ax.scatter(x_s, row['stim'], color='black', alpha=0.9, s=38, zorder=3)
+
+        ax.axhline(0, color='gray', linewidth=1.2)
+        ax.set_xlabel('')
+        ax.set_ylabel('Mean Baseline-corrected PAC', fontsize=16, fontweight='bold')
+        ax.set_title(f'{band} - {title_suffix}', fontsize=18, fontweight='bold')
+        ax.set_xticks(x_base)
+        ax.set_xticklabels(roi_order, rotation=45, ha='right')
+        ax.tick_params(axis='x', labelsize=10)
+        ax.tick_params(axis='y', labelsize=12)
+        style_axis(ax, hide_top_right=True)
+        ax.legend(frameon=False, fontsize=11, loc='upper right')
+        fig.suptitle(f'{label} {phase_label} Baseline-corrected PAC - Stim vs No Stim', fontsize=20, fontweight='bold', y=0.98)
+        save_figure_output(
+            fig,
+            out_dir / filename_template.format(band=band.lower().replace(' ', '_')),
+            footer_text=footer_text,
+            rect=[0, 0, 1, 0.92],
+        )
+
+
 def normalize_trial_type_amme(ttype):
     if isinstance(ttype, str) and 'stim' in ttype.lower() and ttype.lower() != 'nostim':
         return 'stim'
@@ -556,6 +654,15 @@ def plot_bc_bar_graph(
             footer_text=footer_text,
             rect=[0, 0, 1, 0.92],
         )
+    plot_grouped_condition_bars(
+        compute_condition_band_df(data['diff_stim'], data['diff_nostim'], freqs, PAC_BANDS),
+        out_dir,
+        label,
+        'Encoding',
+        'StimVsNoStim_alltrials_encoding_{band}.png',
+        'All Trials',
+        footer_text=footer_text,
+    )
 
 
 def plot_mi_difference_per_roi(
@@ -787,6 +894,10 @@ def plot_bc_bar_by_memory(
     roi_order = sorted(df_all['Region'].unique())
     gray_values = np.linspace(0.85, 0.45, len(roi_order))
     palette = {roi: (gray, gray, gray) for roi, gray in zip(roi_order, gray_values)}
+    mem_source_lookup = {
+        'remembered': (data['diff_stim_rem'], data['diff_nostim_rem']),
+        'forgotten': (data['diff_stim_forg'], data['diff_nostim_forg']),
+    }
     for memory_cond, memory_label in [('remembered', 'Remembered'), ('forgotten', 'Forgotten')]:
         subset = df_all[df_all['memory_cond'] == memory_cond]
         if subset.empty:
@@ -832,6 +943,16 @@ def plot_bc_bar_by_memory(
                 footer_text=footer_text,
                 rect=[0, 0, 1, 0.92],
             )
+        stim_dict, nostim_dict = mem_source_lookup[memory_cond]
+        plot_grouped_condition_bars(
+            compute_condition_band_df(stim_dict, nostim_dict, freqs, PAC_BANDS),
+            out_dir,
+            label,
+            'Encoding',
+            f'StimVsNoStim_{memory_cond}_encoding_{{band}}.png',
+            f'{memory_label} Trials',
+            footer_text=footer_text,
+        )
 
 
 def plot_bc_remembered_forgotten(

@@ -425,6 +425,158 @@ def compute_diff_df(stim_d, nostim_d, freqs, ranges):
                              'mean_power_diff': spv[mask].mean() - npv[mask].mean()})
     return pd.DataFrame(rows)
 
+def compute_condition_band_df(stim_d, nostim_d, freqs, ranges, excluded_substrings=None):
+    rows = []
+    all_rois = visible_rois(set(stim_d.keys()) | set(nostim_d.keys()), excluded_substrings)
+    for roi in all_rois:
+        for subj in sorted(set(stim_d.get(roi, {})) & set(nostim_d.get(roi, {}))):
+            spv = np.asarray(stim_d[roi][subj], dtype=np.float64)
+            npv = np.asarray(nostim_d[roi][subj], dtype=np.float64)
+            for bn, (lo, hi) in ranges.items():
+                mask = (freqs >= lo) & (freqs <= hi)
+                rows.append({
+                    'Patient': subj,
+                    'Region': roi,
+                    'power_range': bn,
+                    'stim': spv[mask].mean(),
+                    'nostim': npv[mask].mean(),
+                })
+    return pd.DataFrame(rows)
+
+def plot_grouped_condition_bars(df, out_dir, label, phase_label, filename_template, title_suffix):
+    if df.empty:
+        return
+    band_order = [band for band in POWER_RANGES if band in df['power_range'].unique()]
+    if not band_order:
+        band_order = sorted(df['power_range'].unique())
+    patients = sorted(df['Patient'].unique())
+    filled_markers = ['o', 's', '^', 'D', 'v', 'P', 'X', '*', '<', '>', 'h', '8', 'p', 'H', 'd']
+    marker_styles = ([(m, True) for m in filled_markers] +
+                     [(m, False) for m in filled_markers] +
+                     [('1', True), ('2', True), ('3', True), ('4', True),
+                      ('+', True), ('x', True), ('|', True), ('_', True)] +
+                     [(f'${i}$', True) for i in range(1, 11)])
+    patient_markers = {p: marker_styles[i] for i, p in enumerate(patients)}
+    bar_colors = {'nostim': '#1f77b4', 'stim': '#d62728'}
+
+    for band in band_order:
+        df_band = df[df['power_range'] == band]
+        if df_band.empty:
+            continue
+        roi_order = [r for r in CONNECTED_DOT_ROI_ORDER if r in df_band['Region'].unique()]
+        if not roi_order:
+            roi_order = sorted(df_band['Region'].unique())
+        if not roi_order:
+            continue
+
+        fig, ax = plt.subplots(figsize=(20, 11))
+        x_base = np.arange(len(roi_order))
+        bar_width = 0.34
+        offsets = {'nostim': -bar_width / 2, 'stim': bar_width / 2}
+
+        for i, roi in enumerate(roi_order):
+            roi_df = df_band[df_band['Region'] == roi]
+            for trial in ['nostim', 'stim']:
+                vals = roi_df[trial].dropna()
+                if len(vals) == 0:
+                    continue
+                mean = vals.mean()
+                sem = vals.std(ddof=1) / np.sqrt(len(vals)) if len(vals) > 1 else 0
+                ax.bar(
+                    x_base[i] + offsets[trial],
+                    mean,
+                    width=bar_width,
+                    color=bar_colors[trial],
+                    edgecolor='black',
+                    linewidth=1.2,
+                    yerr=sem,
+                    capsize=4,
+                    zorder=1,
+                )
+
+        for i, roi in enumerate(roi_order):
+            roi_df = df_band[df_band['Region'] == roi]
+            for _, row in roi_df.iterrows():
+                x_ns = x_base[i] + offsets['nostim']
+                x_s = x_base[i] + offsets['stim']
+                ax.plot([x_ns, x_s], [row['nostim'], row['stim']], color='black', alpha=0.35, linewidth=1)
+                marker, filled = patient_markers[row['Patient']]
+                if filled:
+                    ax.scatter(x_ns, row['nostim'], marker=marker, color='black', alpha=0.65, s=55, zorder=3)
+                    ax.scatter(x_s, row['stim'], marker=marker, color='black', alpha=0.95, s=55, zorder=3)
+                else:
+                    ax.scatter(
+                        x_ns,
+                        row['nostim'],
+                        marker=marker,
+                        facecolors='white',
+                        edgecolors='black',
+                        linewidths=1.1,
+                        alpha=0.85,
+                        s=60,
+                        zorder=3,
+                    )
+                    ax.scatter(
+                        x_s,
+                        row['stim'],
+                        marker=marker,
+                        facecolors='white',
+                        edgecolors='black',
+                        linewidths=1.3,
+                        alpha=1.0,
+                        s=60,
+                        zorder=3,
+                    )
+
+        ax.set_xticks(x_base)
+        ax.set_xticklabels(roi_order, fontsize=14, fontweight='bold')
+        ax.tick_params(axis='x', labelsize=14, width=2, length=6)
+        ax.tick_params(axis='y', labelsize=14, width=2, length=6)
+        ax.axhline(0, color='grey')
+        ax.set_ylabel('Mean Baseline-Corrected Coherency (dB)', fontsize=17, fontweight='bold')
+        fig.suptitle(f'{label} {phase_label} Baseline-Corrected Coherency - {title_suffix}', fontsize=22, fontweight='bold', y=0.965)
+        ax.set_title(band, fontsize=18, fontweight='bold')
+
+        y_values = pd.concat([df_band['nostim'], df_band['stim']], ignore_index=True).dropna()
+        if not y_values.empty:
+            y_min = y_values.min()
+            y_max = y_values.max()
+            if np.isclose(y_min, y_max):
+                ax.set_ylim(y_min - 0.1, y_max + 0.1)
+            else:
+                y_pad = 0.25 * (y_max - y_min)
+                ax.set_ylim(y_min - y_pad, y_max + y_pad)
+
+        stim_legend = [
+            Line2D([0], [0], color=bar_colors['stim'], lw=8, label='Stim'),
+            Line2D([0], [0], color=bar_colors['nostim'], lw=8, label='No Stim'),
+        ]
+        fig.legend(handles=stim_legend, loc='upper center', bbox_to_anchor=(0.50, 0.925),
+                   ncol=2, frameon=False, fontsize=12, title='Condition', title_fontsize=13,
+                   handlelength=1.8, handletextpad=0.6, columnspacing=1.2, borderaxespad=0.2)
+
+        patient_handles = [
+            Line2D([0], [0], marker=patient_markers[p][0], color='black', linestyle='None',
+                   markerfacecolor='black' if patient_markers[p][1] else 'white',
+                   markeredgecolor='black', markeredgewidth=1.1, markersize=8, label=str(p))
+            for p in sorted(df_band['Patient'].unique())
+        ]
+        fig.legend(handles=patient_handles, loc='center left', bbox_to_anchor=(0.82, 0.50),
+                   ncol=2, columnspacing=0.9, handletextpad=0.4, labelspacing=0.45,
+                   frameon=False, fontsize=10, title='Patient', title_fontsize=12)
+        fig.text(
+            0.015,
+            0.015,
+            'Method: For each patient, region pair, and band, separate no-stim and stim means are computed from baseline-corrected coherency spectra. Bars show across-patient means with SEM and dots show patient values.',
+            ha='left',
+            va='bottom',
+            fontsize=9,
+            wrap=True,
+        )
+        fig.subplots_adjust(left=0.08, right=0.80, bottom=0.12, top=0.86)
+        plt.savefig(os.path.join(out_dir, band_filename(filename_template, band)), bbox_inches='tight', dpi=300)
+        finalize_figure(fig)
+
 def collapse_power_across_memory_conditions(data):
     """Match notebook logic: average each subject's available stim x memory spectra."""
     collapsed = {}
@@ -1000,6 +1152,21 @@ def plot_bc_bar_graph(data, out_dir, label):
         rotate_xticks=True,
         caption_text='Method: For each patient and region pair, baseline-corrected spectra are averaged across all stim trials and all no-stim trials separately, band means are computed, then Stim-NoStim is taken. Bars = mean across patients, error bars = SEM, dots = patient values colored by responder-status CSV.',
     )
+    df_condition = compute_condition_band_df(
+        data['bc_stim'],
+        data['bc_nostim'],
+        freqs,
+        POWER_RANGES,
+        data.get('bc_plot_exclude_substrings', set()),
+    )
+    plot_grouped_condition_bars(
+        df_condition,
+        out_dir,
+        label,
+        'Retrieval',
+        'StimVsNoStim_alltrials_retrieval.png',
+        'All Trials',
+    )
 
 
 def plot_bc_per_roi(data, out_dir, label):
@@ -1216,6 +1383,7 @@ def plot_bc_bar_by_memory(data, out_dir, label):
     df_all = filter_region_df_by_substrings(df_all, data.get('bc_plot_exclude_substrings', set()))
     if df_all.empty:
         return
+    mem_source_lookup = {mem: (sd, nd) for mem, sd, nd in mem_pairs}
 
     # Split by memory
     for mem, mem_label in [('remembered', 'Remembered'), ('forgotten', 'Forgotten')]:
@@ -1250,6 +1418,22 @@ def plot_bc_bar_by_memory(data, out_dir, label):
             plt.savefig(os.path.join(out_dir, band_filename(f'Bargraph_Coherency_diff_{mem}_retrieval.png', band)),
                         bbox_inches='tight', dpi=300)
             finalize_figure()
+        sd, nd = mem_source_lookup[mem]
+        df_condition = compute_condition_band_df(
+            sd,
+            nd,
+            freqs,
+            POWER_RANGES,
+            data.get('bc_plot_exclude_substrings', set()),
+        )
+        plot_grouped_condition_bars(
+            df_condition,
+            out_dir,
+            label,
+            'Retrieval',
+            f'StimVsNoStim_{mem}_retrieval.png',
+            f'{mem_label} Trials',
+        )
 
 
 def plot_bc_remembered_forgotten(data, out_dir, label):
@@ -1351,7 +1535,7 @@ def plot_connected_dots(data, out_dir, label):
             x_base = np.arange(len(roi_order))
             bar_width = 0.34
             offsets = {'nostim': -bar_width / 2, 'stim': bar_width / 2}
-            alpha_map = {'nostim': 0.43, 'stim': 0.99}
+            bar_colors = {'nostim': '#1f77b4', 'stim': '#d62728'}
 
             for i, roi in enumerate(roi_order):
                 roi_df = df_band[df_band['Region'] == roi]
@@ -1362,7 +1546,7 @@ def plot_connected_dots(data, out_dir, label):
                     mean = vals.mean()
                     sem = vals.std(ddof=1) / np.sqrt(len(vals)) if len(vals) > 1 else 0
                     ax.bar(x_base[i] + offsets[trial], mean, width=bar_width,
-                           color=roi_colors.get(roi, '#808080'), alpha=alpha_map[trial],
+                           color=bar_colors[trial],
                            edgecolor='black', linewidth=1.2, yerr=sem, capsize=4, zorder=1)
 
             for i, roi in enumerate(roi_order):
@@ -1401,8 +1585,8 @@ def plot_connected_dots(data, out_dir, label):
                     ax.set_ylim(y_min - y_pad, y_max + y_pad)
 
             stim_legend = [
-                Line2D([0], [0], color='black', lw=8, alpha=0.95, label='Stim'),
-                Line2D([0], [0], color='black', lw=8, alpha=0.45, label='NoStim'),
+                Line2D([0], [0], color=bar_colors['stim'], lw=8, label='Stim'),
+                Line2D([0], [0], color=bar_colors['nostim'], lw=8, label='No Stim'),
             ]
             fig.legend(handles=stim_legend, loc='upper center', bbox_to_anchor=(0.50, 0.925),
                        ncol=2, frameon=False, fontsize=12, title='Condition', title_fontsize=13,
