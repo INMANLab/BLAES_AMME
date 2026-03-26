@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Combined PAC encoding analysis for BLAES, AMME, and all subjects."""
+"""Combined PAC encoding analysis for the AMME+BLAES cohort only."""
 
 import shutil
 from pathlib import Path
@@ -15,6 +15,7 @@ from to_combine.BLAES_Group_PAC_analyses_from_matlab_encoding import (
     plot_bc_bar_graph,
     plot_bc_per_roi,
     plot_bc_remembered_forgotten,
+    plot_connected_dots,
     plot_mi_difference_per_roi,
     plot_pac_by_patient,
     plot_pac_by_roi,
@@ -89,6 +90,7 @@ def generate_memory_plots(data, out_dir, label, footer_text=None):
     plot_per_roi_quadrant(data, out_dir, label, footer_text=footer_text)
     plot_bc_bar_by_memory(data, out_dir, label, footer_text=footer_text)
     plot_bc_remembered_forgotten(data, out_dir, label, footer_text=footer_text)
+    plot_connected_dots(data, out_dir, label, footer_text=footer_text)
 
 
 def generate_bla_composite_outputs(data, out_dir, csv_dir, label):
@@ -121,22 +123,22 @@ def main():
     print('Combined PAC Encoding Analysis')
     print('=' * 60)
     print(f'Data path: {DATA_PATH}')
-    print(f'Output path: {OUTPUT_BASE}')
+    print(f'Output path: {OUTPUT_BASE / "all"}')
     print(f'Found {len(PAC_FILES)} PAC Phase 1 files.')
 
     grouped = load_grouped_encoding_pac_data()
     reset_dir(OUTPUT_BASE)
-
-    for key, label in [('blaes', 'BLAES'), ('amme', 'AMME'), ('all', 'All')]:
-        out_dir = ensure_dir(OUTPUT_BASE / key)
-        csv_dir = ensure_dir(out_dir / 'csvs')
-        generate_common_plots(grouped[key], out_dir, label)
-        generate_memory_plots(grouped[key], out_dir, label)
-        export_summary_tables(grouped[key], csv_dir)
-        generate_bla_composite_outputs(grouped[key], out_dir, csv_dir, label)
+    combined_data = grouped['all']
+    combined_label = 'Combined AMME-BLAES'
+    out_dir = ensure_dir(OUTPUT_BASE / 'all')
+    csv_dir = ensure_dir(out_dir / 'csvs')
+    generate_common_plots(combined_data, out_dir, combined_label)
+    generate_memory_plots(combined_data, out_dir, combined_label)
+    export_summary_tables(combined_data, csv_dir)
+    generate_bla_composite_outputs(combined_data, out_dir, csv_dir, combined_label)
 
     print('\n' + '=' * 60)
-    print('Done! PAC encoding outputs saved to:', OUTPUT_BASE)
+    print('Done! PAC encoding outputs saved to:', out_dir)
     print('=' * 60)
 
 

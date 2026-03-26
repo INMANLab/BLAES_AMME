@@ -43,6 +43,8 @@ else:
         pass
 
 import matplotlib.pyplot as plt
+import matplotlib.colors
+from matplotlib.lines import Line2D
 
 warnings.filterwarnings('ignore')
 sns.set_theme(style='white')
@@ -79,6 +81,43 @@ MEMORY_LABELS = {
     'New': 'forgotten',
 }
 
+# Subject-region exclusions: {region_substring: {patients_to_exclude}}
+# amyg066 has extreme spiking PAC in all BLA pairs during encoding
+ENCODING_SUBJECT_REGION_EXCLUSIONS = {
+    'BLA': {'amyg066'},
+}
+
+
+def apply_subject_region_exclusions(df, exclude_map):
+    """Drop rows where a patient is excluded for any region containing the key substring."""
+    if not exclude_map or 'Patient' not in df.columns or 'Region' not in df.columns:
+        return df
+    mask = pd.Series(False, index=df.index)
+    for region_sub, patients in exclude_map.items():
+        mask |= df['Region'].str.contains(region_sub, na=False) & df['Patient'].isin(patients)
+    return df[~mask].copy()
+
+RESPONDER_ORDER = [
+    'Strong responders',
+    'Moderate responders',
+    'Non-responders',
+    'Anti-responders',
+]
+RESPONDER_PALETTE = {
+    'Strong responders': '#5B1A78',
+    'Moderate responders': '#B21D6B',
+    'Non-responders': '#F04646',
+    'Anti-responders': '#F79B62',
+    'Unknown': '#7F7F7F',
+}
+
+CSV_OUTPUT_DIR = REPO_DIR / 'outputs' / 'csvs'
+RESPONDER_STATUS_CSV = CSV_OUTPUT_DIR / 'AMMEBLAES_responder_status.csv'
+
+_RESPONDER_STATUS_MAP = None
+SIDE_LEGEND_BBOX = (0.84, 0.5)
+TOP_LEGEND_BBOX = (0.5, 0.93)
+
 
 # %% [markdown]
 # ## Helpers
@@ -87,6 +126,35 @@ MEMORY_LABELS = {
 def ensure_dir(path):
     Path(path).mkdir(parents=True, exist_ok=True)
     return Path(path)
+
+
+def get_responder_status_map():
+    global _RESPONDER_STATUS_MAP
+    if _RESPONDER_STATUS_MAP is not None:
+        return _RESPONDER_STATUS_MAP
+    if not RESPONDER_STATUS_CSV.exists():
+        _RESPONDER_STATUS_MAP = {}
+        return _RESPONDER_STATUS_MAP
+    status_df = pd.read_csv(RESPONDER_STATUS_CSV)
+    status_column = None
+    for candidate in ['Responder status', 'Responder_status', 'quartile']:
+        if candidate in status_df.columns:
+            status_column = candidate
+            break
+    if status_column is None or 'Patient' not in status_df.columns:
+        _RESPONDER_STATUS_MAP = {}
+        return _RESPONDER_STATUS_MAP
+    status_df = status_df[['Patient', status_column]].dropna(subset=['Patient']).copy()
+    status_df['Patient'] = status_df['Patient'].astype(str)
+    _RESPONDER_STATUS_MAP = dict(zip(status_df['Patient'], status_df[status_column]))
+    return _RESPONDER_STATUS_MAP
+
+
+def band_filename(filename, band):
+    stem = Path(filename).stem
+    ext = Path(filename).suffix
+    band_slug = band.lower().replace(' ', '_')
+    return f'{stem}_{band_slug}{ext}'
 
 
 def finalize_figure(fig=None):
@@ -106,6 +174,42 @@ def save_figure_output(fig, out_path, footer_text=None, rect=None, bbox_inches='
         fig.tight_layout(rect=rect)
     fig.savefig(out_path, dpi=300, bbox_inches=bbox_inches)
     finalize_figure(fig)
+
+
+def add_figure_legend(
+    fig,
+    handles,
+    labels,
+    *,
+    title=None,
+    bbox_to_anchor=SIDE_LEGEND_BBOX,
+    loc='center left',
+    fontsize=9,
+    title_fontsize=10,
+    ncol=1,
+):
+    if not handles or not labels:
+        return None
+    legend = fig.legend(
+        handles,
+        labels,
+        bbox_to_anchor=bbox_to_anchor,
+        loc=loc,
+        fontsize=fontsize,
+        frameon=False,
+        title=title,
+        ncol=ncol,
+    )
+    if legend is not None and title is not None:
+        legend.get_title().set_fontsize(title_fontsize)
+    return legend
+
+
+def make_condition_legend_handles():
+    return [
+        Line2D([0], [0], color='#1f77b4', lw=6, label='No Stim'),
+        Line2D([0], [0], color='#d62728', lw=6, label='Stim'),
+    ]
 
 
 def sorted_freq_cols(df, prefix):
@@ -254,6 +358,7 @@ def plot_grouped_condition_bars(
     filename_template,
     title_suffix,
     footer_text=None,
+    show_patients=True,
 ):
     if condition_df.empty:
         return
@@ -292,14 +397,15 @@ def plot_grouped_condition_bars(
                     label='No Stim' if trial == 'nostim' and i == 0 else ('Stim' if trial == 'stim' and i == 0 else None),
                 )
 
-        for i, roi in enumerate(roi_order):
-            roi_df = band_df[band_df['Region'] == roi]
-            for _, row in roi_df.iterrows():
-                x_ns = x_base[i] + offsets['nostim']
-                x_s = x_base[i] + offsets['stim']
-                ax.plot([x_ns, x_s], [row['nostim'], row['stim']], color='black', alpha=0.28, linewidth=1)
-                ax.scatter(x_ns, row['nostim'], color='black', alpha=0.65, s=38, zorder=3)
-                ax.scatter(x_s, row['stim'], color='black', alpha=0.9, s=38, zorder=3)
+        if show_patients:
+            for i, roi in enumerate(roi_order):
+                roi_df = band_df[band_df['Region'] == roi]
+                for _, row in roi_df.iterrows():
+                    x_ns = x_base[i] + offsets['nostim']
+                    x_s = x_base[i] + offsets['stim']
+                    ax.plot([x_ns, x_s], [row['nostim'], row['stim']], color='black', alpha=0.28, linewidth=1)
+                    ax.scatter(x_ns, row['nostim'], color='black', alpha=0.65, s=38, zorder=3)
+                    ax.scatter(x_s, row['stim'], color='black', alpha=0.9, s=38, zorder=3)
 
         ax.axhline(0, color='gray', linewidth=1.2)
         ax.set_xlabel('')
@@ -310,13 +416,27 @@ def plot_grouped_condition_bars(
         ax.tick_params(axis='x', labelsize=10)
         ax.tick_params(axis='y', labelsize=12)
         style_axis(ax, hide_top_right=True)
-        ax.legend(frameon=False, fontsize=11, loc='upper right')
+        add_figure_legend(
+            fig,
+            make_condition_legend_handles(),
+            ['No Stim', 'Stim'],
+            title='Condition',
+            bbox_to_anchor=TOP_LEGEND_BBOX,
+            loc='upper center',
+            fontsize=11,
+            title_fontsize=12,
+            ncol=2,
+        )
         fig.suptitle(f'{label} {phase_label} Baseline-corrected PAC - Stim vs No Stim', fontsize=20, fontweight='bold', y=0.98)
+        clean_suffix = '_clean' if not show_patients else ''
+        base_name = filename_template.format(band=band.lower().replace(' ', '_'))
+        stem = base_name.rsplit('.', 1)[0]
+        ext = base_name.rsplit('.', 1)[1] if '.' in base_name else 'png'
         save_figure_output(
             fig,
-            out_dir / filename_template.format(band=band.lower().replace(' ', '_')),
+            out_dir / f'{stem}{clean_suffix}.{ext}',
             footer_text=footer_text,
-            rect=[0, 0, 1, 0.92],
+            rect=[0, 0, 1, 0.90] if show_patients else [0, 0, 0.95, 0.90],
         )
 
 
@@ -377,6 +497,7 @@ def load_blaes_encoding_pac():
             continue
         df = df[~df['Region'].map(is_same_region_comparison)].copy()
         df = df[~df['Region'].map(has_excluded_region_token)].copy()
+        df = apply_subject_region_exclusions(df, ENCODING_SUBJECT_REGION_EXCLUSIONS)
         if df.empty:
             print(f"Skipping {os.path.basename(pac_file)}; no eligible cross-region PAC rows after filtering.")
             continue
@@ -498,7 +619,8 @@ def plot_pac_by_roi(data, out_dir, label='BLAES', filename='GroupPAC_byROI_encod
     ax.set_title(f'{label} Encoding PAC by ROI', fontsize=22, fontweight='bold')
     ax.tick_params(axis='both', labelsize=13)
     style_axis(ax)
-    ax.legend(bbox_to_anchor=(1.02, 0.5), loc='center left', fontsize=9, frameon=False)
+    handles, labels = ax.get_legend_handles_labels()
+    add_figure_legend(fig, handles, labels, title='ROI', fontsize=9, title_fontsize=10)
     save_figure_output(fig, out_dir / filename, footer_text=footer_text, rect=[0, 0, 0.82, 1])
 
 
@@ -522,7 +644,8 @@ def plot_pac_by_patient(data, out_dir, label='BLAES', filename='GroupPAC_byPatie
     ax.set_title(f'{label} Encoding PAC by Patient', fontsize=22, fontweight='bold')
     ax.tick_params(axis='both', labelsize=13)
     style_axis(ax)
-    ax.legend(bbox_to_anchor=(1.02, 0.5), loc='center left', fontsize=9, frameon=False)
+    handles, labels = ax.get_legend_handles_labels()
+    add_figure_legend(fig, handles, labels, title='Patient', fontsize=8, title_fontsize=9)
     save_figure_output(fig, out_dir / filename, footer_text=footer_text, rect=[0, 0, 0.82, 1])
 
 
@@ -550,7 +673,8 @@ def plot_stim_vs_nostim(data, out_dir, label='BLAES', filename='GroupPAC_byROI_e
         ax.tick_params(axis='both', labelsize=12)
         style_axis(ax)
     axes[0].set_ylabel('PAC', fontsize=16, fontweight='bold')
-    axes[1].legend(bbox_to_anchor=(1.02, 0.5), loc='center left', fontsize=8.5, frameon=False)
+    handles, labels = axes[1].get_legend_handles_labels()
+    add_figure_legend(fig, handles, labels, title='ROI', fontsize=8.5, title_fontsize=9)
     fig.suptitle(f'{label} Encoding PAC: No Stim vs Stim', fontsize=22, fontweight='bold')
     save_figure_output(fig, out_dir / filename, footer_text=footer_text, rect=[0, 0, 0.84, 0.95])
 
@@ -588,7 +712,7 @@ def plot_per_roi_patient_stim_nostim(
         if plotted_any:
             handles, labels = collect_unique_legend_items(axes)
             if handles:
-                fig.legend(handles, labels, bbox_to_anchor=(0.86, 0.5), loc='center left', fontsize=8, frameon=False)
+                add_figure_legend(fig, handles, labels, title='Patient', fontsize=8, title_fontsize=9)
             save_figure_output(
                 fig,
                 out_dir / filename_template.format(roi=roi),
@@ -663,6 +787,295 @@ def plot_bc_bar_graph(
         'All Trials',
         footer_text=footer_text,
     )
+    plot_grouped_condition_bars(
+        compute_condition_band_df(data['diff_stim'], data['diff_nostim'], freqs, PAC_BANDS),
+        out_dir,
+        label,
+        'Encoding',
+        'StimVsNoStim_alltrials_encoding_{band}.png',
+        'All Trials',
+        footer_text=footer_text,
+        show_patients=False,
+    )
+    plot_responder_status_bargraph(
+        diff_df[diff_df['Region'].isin(roi_order)],
+        out_dir,
+        f'{label} Encoding Baseline-corrected PAC Diff (Stim - No Stim)',
+        'Baseline-corrected PAC Diff',
+        'Bargraph_baseline_corrected_PACDiff_byROI_encoding_responder_status.png',
+        rotate_xticks=True,
+        footer_text=footer_text or (
+            'Method: For each patient and region pair, baseline-corrected PAC spectra are averaged across all '
+            'stim trials and all no-stim trials separately, band means are computed, then Stim-NoStim is taken. '
+            'Bars = mean across patients, error bars = SEM, dots = patient values colored by responder-status CSV.'
+        ),
+    )
+
+
+def plot_responder_status_bargraph(
+    df_collapsed,
+    out_dir,
+    title,
+    ylabel,
+    filename,
+    rotate_xticks=False,
+    footer_text=None,
+):
+    if df_collapsed.empty:
+        return
+    plot_df = df_collapsed.copy()
+    plot_df['Responder status'] = plot_df['Patient'].map(get_responder_status_map()).fillna('Unknown')
+    band_order = [b for b in PAC_BANDS if b in plot_df['band'].unique()]
+    if not band_order:
+        band_order = list(dict.fromkeys(plot_df['band']))
+    roi_order = list(dict.fromkeys(plot_df['Region']))
+    if not roi_order:
+        return
+
+    gray_values = np.linspace(0.85, 0.45, len(roi_order))
+    bar_colors = {
+        roi: matplotlib.colors.to_hex((gray, gray, gray))
+        for roi, gray in zip(roi_order, gray_values)
+    }
+
+    rng = np.random.default_rng(7)
+    responder_handles = []
+    for status in RESPONDER_ORDER:
+        if status in plot_df['Responder status'].values:
+            responder_handles.append(
+                Line2D([0], [0], marker='o', linestyle='None', markersize=9,
+                       markerfacecolor=RESPONDER_PALETTE[status], markeredgecolor='none',
+                       label=status)
+            )
+    if 'Unknown' in plot_df['Responder status'].values:
+        responder_handles.append(
+            Line2D([0], [0], marker='o', linestyle='None', markersize=9,
+                   markerfacecolor=RESPONDER_PALETTE['Unknown'], markeredgecolor='none',
+                   label='Unknown')
+        )
+
+    for band in band_order:
+        band_df = plot_df[plot_df['band'] == band].copy()
+        if band_df.empty:
+            continue
+        fig, ax = plt.subplots(figsize=(11.5, 8.2))
+        summary = band_df.groupby('Region')['mean_pac_diff'].agg(['mean', 'sem']).reindex(roi_order)
+        x = np.arange(len(roi_order))
+        ax.bar(
+            x,
+            summary['mean'].to_numpy(),
+            yerr=summary['sem'].fillna(0).to_numpy(),
+            color=[bar_colors[roi] for roi in roi_order],
+            edgecolor='#4D4D4D',
+            linewidth=1.2,
+            width=0.72,
+            capsize=3,
+            ecolor='#4D4D4D',
+            zorder=1,
+        )
+        for idx, roi in enumerate(roi_order):
+            roi_df = band_df[band_df['Region'] == roi]
+            if roi_df.empty:
+                continue
+            jitter = rng.uniform(-0.16, 0.16, len(roi_df))
+            colors = [RESPONDER_PALETTE.get(status, RESPONDER_PALETTE['Unknown']) for status in roi_df['Responder status']]
+            ax.scatter(
+                np.full(len(roi_df), idx, dtype=float) + jitter,
+                roi_df['mean_pac_diff'],
+                c=colors,
+                s=42,
+                alpha=0.75,
+                edgecolors='none',
+                zorder=3,
+            )
+        ax.axhline(0, color='#4D4D4D', linewidth=1.2, zorder=0)
+        ax.set_title(band, fontsize=20, fontweight='bold')
+        ax.set_xlabel('')
+        ax.set_xticks(x)
+        ax.set_xticklabels(
+            roi_order,
+            rotation=45 if rotate_xticks else 0,
+            ha='right' if rotate_xticks else 'center',
+            fontsize=14,
+            fontweight='bold',
+        )
+        ax.tick_params(axis='y', labelsize=15, width=2, length=6)
+        ax.tick_params(axis='x', width=2, length=6)
+        ax.set_ylabel(ylabel, fontsize=18, fontweight='bold')
+        style_axis(ax, hide_top_right=True)
+        fig.suptitle(f'{title} - {band}', fontsize=24, fontweight='bold', y=0.98)
+        if responder_handles:
+            add_figure_legend(
+                fig,
+                responder_handles,
+                [handle.get_label() for handle in responder_handles],
+                title='Responder status',
+                bbox_to_anchor=(0.5, 0.92),
+                loc='upper center',
+                ncol=min(4, len(responder_handles)),
+                fontsize=14,
+                title_fontsize=16,
+            )
+        save_figure_output(
+            fig,
+            out_dir / band_filename(filename, band),
+            footer_text=footer_text,
+            rect=[0, 0, 1, 0.83],
+        )
+
+
+def plot_connected_dots(data, out_dir, label, footer_text=None, show_patients=True):
+    """Connected dots plot showing stim vs nostim PAC differences per patient."""
+    freqs = data['freqs_diff']
+    if freqs is None:
+        return
+    mem_pairs = [
+        ('remembered', data.get('diff_stim_rem', {}), data.get('diff_nostim_rem', {})),
+        ('forgotten', data.get('diff_stim_forg', {}), data.get('diff_nostim_forg', {})),
+    ]
+
+    all_rows = []
+    for mem, sd, nd in mem_pairs:
+        all_rois_here = sorted(set(sd.keys()) | set(nd.keys()))
+        for roi in all_rois_here:
+            for subj in sorted(set(sd.get(roi, {}).keys()) & set(nd.get(roi, {}).keys())):
+                for bn, (lo, hi) in PAC_BANDS.items():
+                    mask = (freqs >= lo) & (freqs <= hi)
+                    stim_val = np.asarray(sd[roi][subj], dtype=np.float64)[mask].mean()
+                    nostim_val = np.asarray(nd[roi][subj], dtype=np.float64)[mask].mean()
+                    all_rows.append({'Patient': subj, 'Region': roi, 'band': bn,
+                                     'memory_cond': mem, 'stim': stim_val, 'nostim': nostim_val})
+
+    if not all_rows:
+        return
+
+    df = pd.DataFrame(all_rows)
+    band_order = list(PAC_BANDS.keys())
+    if show_patients:
+        patients = sorted(df['Patient'].unique())
+        filled_markers = ['o', 's', '^', 'D', 'v', 'P', 'X', '*', '<', '>', 'h', '8', 'p', 'H', 'd']
+        marker_styles = ([(m, True) for m in filled_markers] +
+                         [(m, False) for m in filled_markers] +
+                         [('1', True), ('2', True), ('3', True), ('4', True),
+                          ('+', True), ('x', True), ('|', True), ('_', True)] +
+                         [(f'${i}$', True) for i in range(1, 11)])
+        patient_markers = {p: marker_styles[i] for i, p in enumerate(patients)}
+
+    clean_suffix = '_clean' if not show_patients else ''
+
+    for mem, mem_label in [('remembered', 'Remembered'), ('forgotten', 'Forgotten')]:
+        df_mem = df[df['memory_cond'] == mem]
+        if df_mem.empty:
+            continue
+        for band in band_order:
+            df_band = df_mem[df_mem['band'] == band]
+            if df_band.empty:
+                continue
+            roi_order = sorted(df_band['Region'].unique())
+            if not roi_order:
+                continue
+
+            fig, ax = plt.subplots(figsize=(16, 11))
+            x_base = np.arange(len(roi_order))
+            bar_width = 0.34
+            offsets = {'nostim': -bar_width / 2, 'stim': bar_width / 2}
+            bar_colors = {'nostim': '#1f77b4', 'stim': '#d62728'}
+
+            for i, roi in enumerate(roi_order):
+                roi_df = df_band[df_band['Region'] == roi]
+                for trial in ['nostim', 'stim']:
+                    vals = roi_df[trial].dropna()
+                    if len(vals) == 0:
+                        continue
+                    mean = vals.mean()
+                    sem = vals.std(ddof=1) / np.sqrt(len(vals)) if len(vals) > 1 else 0
+                    ax.bar(x_base[i] + offsets[trial], mean, width=bar_width,
+                           color=bar_colors[trial],
+                           edgecolor='black', linewidth=1.2, yerr=sem, capsize=4, zorder=1)
+
+            if show_patients:
+                for i, roi in enumerate(roi_order):
+                    roi_df = df_band[df_band['Region'] == roi]
+                    for _, row in roi_df.iterrows():
+                        x_ns = x_base[i] + offsets['nostim']
+                        x_s = x_base[i] + offsets['stim']
+                        ax.plot([x_ns, x_s], [row['nostim'], row['stim']],
+                                color='black', alpha=0.35, linewidth=1)
+                        m, filled = patient_markers[row['Patient']]
+                        if filled:
+                            ax.scatter(x_ns, row['nostim'], marker=m, color='black', alpha=0.65, s=55, zorder=3)
+                            ax.scatter(x_s, row['stim'], marker=m, color='black', alpha=0.95, s=55, zorder=3)
+                        else:
+                            ax.scatter(x_ns, row['nostim'], marker=m, facecolors='white', edgecolors='black',
+                                       linewidths=1.1, alpha=0.85, s=60, zorder=3)
+                            ax.scatter(x_s, row['stim'], marker=m, facecolors='white', edgecolors='black',
+                                       linewidths=1.3, alpha=1.0, s=60, zorder=3)
+
+            ax.set_xticks(x_base)
+            ax.set_xticklabels(roi_order, fontsize=14, fontweight='bold')
+            ax.tick_params(axis='x', labelsize=14, width=2, length=6)
+            ax.tick_params(axis='y', labelsize=14, width=2, length=6)
+            ax.axhline(0, color='grey')
+            ax.set_ylabel('Mean Baseline-corrected MI', fontsize=17, fontweight='bold')
+            style_axis(ax, hide_top_right=True)
+            fig.suptitle(f'{band} \u2014 {mem_label}', fontsize=22, fontweight='bold', y=0.965)
+
+            y_values = pd.concat([df_band['nostim'], df_band['stim']], ignore_index=True).dropna()
+            if not y_values.empty:
+                y_min = y_values.min()
+                y_max = y_values.max()
+                if np.isclose(y_min, y_max):
+                    ax.set_ylim(y_min - 0.1, y_max + 0.1)
+                else:
+                    y_pad = 0.25 * (y_max - y_min)
+                    ax.set_ylim(y_min - y_pad, y_max + y_pad)
+
+            stim_legend = [
+                Line2D([0], [0], color=bar_colors['stim'], lw=8, label='Stim'),
+                Line2D([0], [0], color=bar_colors['nostim'], lw=8, label='No Stim'),
+            ]
+            add_figure_legend(
+                fig,
+                stim_legend,
+                [handle.get_label() for handle in stim_legend],
+                title='Condition',
+                bbox_to_anchor=TOP_LEGEND_BBOX,
+                loc='upper center',
+                ncol=2,
+                fontsize=12,
+                title_fontsize=13,
+            )
+
+            if show_patients:
+                patient_handles = [
+                    Line2D([0], [0], marker=patient_markers[p][0], color='black', linestyle='None',
+                           markerfacecolor='black' if patient_markers[p][1] else 'white',
+                           markeredgecolor='black', markeredgewidth=1.1, markersize=8, label=str(p))
+                    for p in sorted(df_band['Patient'].unique())
+                ]
+                add_figure_legend(
+                    fig,
+                    patient_handles,
+                    [handle.get_label() for handle in patient_handles],
+                    title='Patient',
+                    bbox_to_anchor=SIDE_LEGEND_BBOX,
+                    loc='center left',
+                    ncol=2,
+                    fontsize=10,
+                    title_fontsize=12,
+                )
+
+            fig.subplots_adjust(left=0.10, right=0.78 if show_patients else 0.95, bottom=0.12, top=0.86)
+            base_fn = band_filename(f'StimVsNoStim_{mem}_encoding.png', band)
+            stem = base_fn.rsplit('.', 1)[0]
+            ext = base_fn.rsplit('.', 1)[1] if '.' in base_fn else 'png'
+            save_figure_output(
+                fig,
+                out_dir / f'{stem}{clean_suffix}.{ext}',
+                footer_text=footer_text,
+            )
+            print(f"\n{label}: N subjects per ROI for {band} {mem_label}")
+            print(df_band.groupby(['Region', 'Patient']).size().reset_index().groupby('Region')['Patient'].nunique())
 
 
 def plot_mi_difference_per_roi(
@@ -761,8 +1174,24 @@ def plot_bc_per_roi(
         ax.set_ylabel('PAC', fontsize=15, fontweight='bold')
         ax.tick_params(axis='both', labelsize=12)
         style_axis(ax)
-        ax.legend(frameon=False, fontsize=11)
-        save_figure_output(fig, out_dir / filename_template.format(roi=roi), footer_text=footer_text)
+        handles, labels = ax.get_legend_handles_labels()
+        add_figure_legend(
+            fig,
+            handles,
+            labels,
+            title='Condition',
+            bbox_to_anchor=TOP_LEGEND_BBOX,
+            loc='upper center',
+            fontsize=11,
+            title_fontsize=12,
+            ncol=2,
+        )
+        save_figure_output(
+            fig,
+            out_dir / filename_template.format(roi=roi),
+            footer_text=footer_text,
+            rect=[0, 0, 1, 0.93],
+        )
 
 
 def plot_quadrant_stim_memory(
@@ -805,7 +1234,7 @@ def plot_quadrant_stim_memory(
     fig.text(0.04, 0.5, 'PAC', va='center', rotation='vertical', fontsize=16, fontweight='bold')
     fig.suptitle(f'{label} Encoding PAC by Stim x Memory', fontsize=20, fontweight='bold')
     handles, labels = axes[0, 0].get_legend_handles_labels()
-    fig.legend(handles, labels, bbox_to_anchor=(0.84, 0.5), loc='center left', fontsize=8.5, frameon=False)
+    add_figure_legend(fig, handles, labels, title='ROI', fontsize=8.5, title_fontsize=9)
     save_figure_output(fig, out_dir / filename, footer_text=footer_text, rect=[0.06, 0.06, 0.82, 0.94])
 
 
@@ -861,7 +1290,7 @@ def plot_per_roi_quadrant(
             fig.text(0.04, 0.5, 'PAC', va='center', rotation='vertical', fontsize=14, fontweight='bold')
             handles, labels = collect_unique_legend_items(axes.flatten())
             if handles:
-                fig.legend(handles, labels, bbox_to_anchor=(0.88, 0.5), loc='center left', fontsize=7.5, frameon=False)
+                add_figure_legend(fig, handles, labels, title='Patient', fontsize=7.5, title_fontsize=8.5)
             save_figure_output(
                 fig,
                 out_dir / filename_template.format(roi=roi),
@@ -997,13 +1426,23 @@ def plot_bc_remembered_forgotten(
         axes[0].set_ylabel('PAC', fontsize=14, fontweight='bold')
         if has_data:
             handles, labels = axes[0].get_legend_handles_labels()
-            fig.legend(handles, labels, bbox_to_anchor=(0.92, 0.5), loc='center left', fontsize=10, frameon=False)
+            add_figure_legend(
+                fig,
+                handles,
+                labels,
+                title='Condition',
+                bbox_to_anchor=TOP_LEGEND_BBOX,
+                loc='upper center',
+                fontsize=10,
+                title_fontsize=11,
+                ncol=2,
+            )
             fig.suptitle(f'{label} Encoding {roi} Baseline-corrected PAC', fontsize=18, fontweight='bold')
             save_figure_output(
                 fig,
                 out_dir / filename_template.format(roi=roi),
                 footer_text=footer_text,
-                rect=[0, 0, 0.9, 0.93],
+                rect=[0, 0, 1, 0.90],
             )
         else:
             finalize_figure(fig)
