@@ -57,6 +57,11 @@ except ImportError:
     f_dist = None
     t_dist = None
 
+try:
+    import statsmodels.api as sm
+except ImportError:
+    sm = None
+
 BASE_DIR = Path.cwd()
 BEHAVIOR_PATH = BASE_DIR / "AMMEBLAES_includedpts_firstsession_behavioral.csv"
 if not BEHAVIOR_PATH.exists():
@@ -68,6 +73,11 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 plt.style.use("default")
 plt.rcParams["figure.dpi"] = 140
 plt.rcParams["savefig.dpi"] = 300
+
+RAW_MEMORY_COLUMN = "avg_stim_dprime_diff"
+NORMALIZED_MEMORY_COLUMN = "normalized_subsequent_memory_score"
+RAW_MEMORY_LABEL = "Subsequent memory"
+NORMALIZED_MEMORY_LABEL = "Normalized subsequent memory score"
 
 
 def compute_correlation_frame(df: pd.DataFrame, x_col: str, y_col: str) -> dict:
@@ -212,6 +222,176 @@ def zscore_series(s: pd.Series) -> pd.Series:
     return (s - s.mean()) / std
 
 
+def memory_label(y_col: str) -> str:
+    return NORMALIZED_MEMORY_LABEL if y_col == NORMALIZED_MEMORY_COLUMN else RAW_MEMORY_LABEL
+
+
+def safe_numeric(series: pd.Series) -> pd.Series:
+    return pd.to_numeric(series, errors="coerce")
+
+
+def run_figure2a_like_encoding(
+    merged_df: pd.DataFrame,
+    output_dir: Path,
+) -> None:
+    predictor_meta = {
+        "IEDRateAvg": "IED rate (per trial)",
+        "left_lateralized_ied": "Left-lateralized IED",
+        "PatientRegionSpread": "IED regional spread",
+        "White Matter": "White matter IED proportion",
+        "stimulated_trials_pct": "Stimulated trial proportion",
+        "nonstim_trials_pct": "Non-stimulated trial proportion",
+    }
+    predictors = [col for col in predictor_meta if col in merged_df.columns]
+    if len(predictors) < 2:
+        return
+
+    work = merged_df[[NORMALIZED_MEMORY_COLUMN] + predictors].copy()
+    for col in predictors + [NORMALIZED_MEMORY_COLUMN]:
+        work[col] = safe_numeric(work[col])
+
+    usable_predictors = [c for c in predictors if work[c].nunique(dropna=True) > 1]
+    if len(usable_predictors) < 2:
+        return
+    work = work[[NORMALIZED_MEMORY_COLUMN] + usable_predictors].dropna().copy()
+    if len(work) < len(usable_predictors) + 5:
+        return
+
+    # Standardize predictors to mirror Figure 2A's standardized continuous effects.
+    for col in usable_predictors:
+        work[col] = zscore_series(work[col])
+    work = work.dropna().copy()
+    if len(work) < len(usable_predictors) + 5:
+        return
+
+    rows = []
+    if sm is not None:
+        x = sm.add_constant(work[usable_predictors], has_constant="add")
+        y = work[NORMALIZED_MEMORY_COLUMN]
+        model = sm.OLS(y, x, missing="drop").fit(cov_type="HC3")
+        for col in usable_predictors:
+            rows.append(
+                {
+                    "predictor": col,
+                    "label": predictor_meta.get(col, col),
+                    "beta": float(model.params.get(col, np.nan)),
+                    "std_err": float(model.bse.get(col, np.nan)),
+                    "t": float(model.tvalues.get(col, np.nan)),
+                    "p_value": float(model.pvalues.get(col, np.nan)),
+                    "n": int(model.nobs),
+                    "model_r2": float(model.rsquared),
+                    "model_adj_r2": float(model.rsquared_adj),
+                }
+            )
+    else:
+        # Fallback: univariate approximations when statsmodels is unavailable.
+        for col in usable_predictors:
+            tmp = work[[NORMALIZED_MEMORY_COLUMN, col]].dropna()
+            if len(tmp) < 3:
+                continue
+            slope, intercept = np.polyfit(tmp[col], tmp[NORMALIZED_MEMORY_COLUMN], 1)
+            r = np.corrcoef(tmp[col], tmp[NORMALIZED_MEMORY_COLUMN])[0, 1]
+            p = np.nan
+            if t_dist is not None and np.isfinite(r) and abs(r) < 1:
+                t_val = r * np.sqrt((len(tmp) - 2) / (1 - r**2))
+                p = float(2 * t_dist.sf(np.abs(t_val), len(tmp) - 2))
+            rows.append(
+                {
+                    "predictor": col,
+                    "label": predictor_meta.get(col, col),
+                    "beta": float(slope),
+                    "std_err": np.nan,
+                    "t": np.nan,
+                    "p_value": p,
+                    "n": int(len(tmp)),
+                    "model_r2": float(r**2) if np.isfinite(r) else np.nan,
+                    "model_adj_r2": np.nan,
+                }
+            )
+
+    if not rows:
+        return
+
+    coef_df = pd.DataFrame(rows)
+    ranked = coef_df["p_value"].rank(method="min")
+    m = max(int(ranked.max()), 1)
+    coef_df["p_adjusted_bh"] = (coef_df["p_value"] * m / ranked).clip(upper=1.0)
+    coef_df = coef_df.sort_values(["p_adjusted_bh", "p_value"], na_position="last")
+    coef_df.to_csv(output_dir / "figure2a_like_encoding_glm_summary.csv", index=False)
+
+    plot_df = coef_df.copy()
+    plot_df["ci95"] = 1.96 * plot_df["std_err"].fillna(0)
+
+    fig, ax = plt.subplots(figsize=(9, 5.8))
+    ax.barh(
+        plot_df["label"],
+        plot_df["beta"],
+        xerr=plot_df["ci95"],
+        color="#4C78A8",
+        edgecolor="black",
+        linewidth=1.0,
+    )
+    ax.axvline(0, color="black", linewidth=1)
+    ax.set_xlabel("Standardized effect size (beta)")
+    ax.set_title("Encoding Figure 2A-like IED feature model")
+    fig.text(
+        0.01,
+        0.01,
+        "Model approximation of Quon Figure 2A: multivariable standardized effects with BH-adjusted p-values.",
+        fontsize=8.5,
+        ha="left",
+    )
+    fig.tight_layout(rect=[0, 0.04, 1, 1])
+    fig.savefig(output_dir / "figure2a_like_encoding_glm_coefficients.png", bbox_inches="tight")
+    if running_in_notebook():
+        plt.show()
+    plt.close(fig)
+
+
+def run_encoding_stim_split_regressions(
+    merged_df: pd.DataFrame,
+    phase_output_dir: Path,
+) -> None:
+    spec = {
+        "stimulated_trials_pct": {
+            "title": "Encoding: Subsequent memory vs Stimulated IED-trial proportion",
+            "xlabel": "Stimulated IED-positive trial proportion",
+            "filename": "memory_vs_stimulated_trials_pct_encoding.png",
+            "color": "#D1495B",
+        },
+        "nonstim_trials_pct": {
+            "title": "Encoding: Subsequent memory vs Non-stimulated IED-trial proportion",
+            "xlabel": "Non-stimulated IED-positive trial proportion",
+            "filename": "memory_vs_nonstim_trials_pct_encoding.png",
+            "color": "#4C78A8",
+        },
+    }
+
+    rows = []
+    for x_col, meta in spec.items():
+        if x_col not in merged_df.columns:
+            continue
+        stats = scatter_with_fit(
+            merged_df,
+            x_col=x_col,
+            y_col=RAW_MEMORY_COLUMN,
+            title=meta["title"],
+            xlabel=meta["xlabel"],
+            ylabel=RAW_MEMORY_LABEL,
+            filename=meta["filename"],
+            color=meta["color"],
+            output_dir=phase_output_dir,
+        )
+        stats["display_label"] = meta["xlabel"]
+        rows.append(stats)
+
+    if rows:
+        pd.DataFrame(rows).to_csv(
+            phase_output_dir / "encoding_stim_split_correlation_summary.csv",
+            index=False,
+        )
+
+
 def run_timing_relationships(
     merged_df: pd.DataFrame,
     timing_cols: list[str],
@@ -238,7 +418,7 @@ def run_timing_relationships(
             y_col=memory_measure,
             title=f"{phase_name.title()}: Memory vs {lbl} IED Timing",
             xlabel=f"{lbl} (% of unique IED-positive trials)",
-            ylabel=memory_measure,
+            ylabel=memory_label(memory_measure),
             filename=f"memory_vs_{t_col}.png",
             color=timing_palette.get(t_col, "#555555"),
             output_dir=output_dir,
@@ -275,7 +455,7 @@ def run_timing_relationships(
         row = timing_corr.loc[timing_corr["x_measure"] == t_col].iloc[0]
         ax.set_title(timing_label(t_col))
         ax.set_xlabel("Proportion of unique IED-positive trials")
-        ax.set_ylabel(memory_measure)
+        ax.set_ylabel(memory_label(memory_measure))
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
         p_text = "nan" if pd.isna(row["pearson_p"]) else f"{row['pearson_p']:.3f}"
@@ -299,7 +479,7 @@ def run_timing_relationships(
         axes[j].axis("off")
 
     fig.suptitle(
-        f"{phase_name.title()}: IED Timing Correlations with {memory_measure}",
+        f"{phase_name.title()}: IED Timing Correlations with {memory_label(memory_measure)}",
         y=1.01,
         fontsize=16,
     )
@@ -403,7 +583,7 @@ def run_timing_relationships(
         )
         ax.axhline(0, color="black", linewidth=1)
         ax.set_ylabel("Standardized beta (95% CI)")
-        ax.set_title(f"{phase_name.title()}: Relative Timing Impact on {memory_measure}")
+        ax.set_title(f"{phase_name.title()}: Relative Timing Impact on {memory_label(memory_measure)}")
         ax.tick_params(axis="x", rotation=20)
         fig.tight_layout()
         fig.savefig(output_dir / "timing_impact_regression_betas.png", bbox_inches="tight")
@@ -418,6 +598,7 @@ def run_phase_relationships(phase_name: str, summary_dir: Path, output_root: Pat
         "ied_channel": summary_dir / "patient_channelspread_summary.csv",
         "ied_region": summary_dir / "patient_regionspread_summary.csv",
         "ied_trial": summary_dir / "patient_trial_summary.csv",
+        "ied_graywhite": summary_dir / "patient_graymatter_gw_summary.csv",
     }
     missing = [str(path) for path in required_files.values() if not path.exists()]
     if missing:
@@ -433,18 +614,25 @@ def run_phase_relationships(phase_name: str, summary_dir: Path, output_root: Pat
     ied_channel = pd.read_csv(required_files["ied_channel"])
     ied_region = pd.read_csv(required_files["ied_region"])
     ied_trial = pd.read_csv(required_files["ied_trial"])
+    ied_graywhite = pd.read_csv(required_files["ied_graywhite"])
 
-    for frame in [ied_rate, ied_channel, ied_region, ied_trial]:
+    for frame in [ied_rate, ied_channel, ied_region, ied_trial, ied_graywhite]:
         frame["Patient"] = frame["Patient"].astype("string").str.strip()
 
     timing_cols = available_timing_pct_columns(ied_trial)
+    stim_split_cols = [
+        col
+        for col in ["stimulated_trials_pct", "nonstim_trials_pct"]
+        if col in ied_trial.columns
+    ]
 
     merged = (
         behavior_df[
             [
                 "Patient",
                 "Study",
-                "avg_stim_dprime_diff",
+                RAW_MEMORY_COLUMN,
+                NORMALIZED_MEMORY_COLUMN,
                 "IED_freq",
                 "IED_laterality",
                 "avg_stim",
@@ -454,11 +642,36 @@ def run_phase_relationships(phase_name: str, summary_dir: Path, output_root: Pat
         .merge(ied_rate[["Patient", "IEDRateAvg", "trials_with_weighted_iedrate"]], on="Patient", how="inner")
         .merge(ied_channel[["Patient", "PatientChannelSpread"]], on="Patient", how="left")
         .merge(ied_region[["Patient", "PatientRegionSpread"]], on="Patient", how="left")
-        .merge(ied_trial[["Patient", "unique_ied_trials"] + timing_cols], on="Patient", how="left")
+        .merge(ied_graywhite[["Patient", "Gray Matter", "White Matter"]], on="Patient", how="left")
+        .merge(
+            ied_trial[["Patient", "unique_ied_trials"] + stim_split_cols + timing_cols],
+            on="Patient",
+            how="left",
+        )
     )
+
+    if "IED_laterality" in merged.columns:
+        merged["left_lateralized_ied"] = (
+            merged["IED_laterality"].astype("string").str.strip().str.upper() == "Y"
+        ).astype(float)
+
+    for col in [
+        RAW_MEMORY_COLUMN,
+        NORMALIZED_MEMORY_COLUMN,
+        "IEDRateAvg",
+        "PatientChannelSpread",
+        "PatientRegionSpread",
+        "White Matter",
+        "Gray Matter",
+        "stimulated_trials_pct",
+        "nonstim_trials_pct",
+    ]:
+        if col in merged.columns:
+            merged[col] = pd.to_numeric(merged[col], errors="coerce")
+
     merged.to_csv(phase_output_dir / "memory_vs_ied_merged.csv", index=False)
 
-    memory_measure = "avg_stim_dprime_diff"
+    memory_measure = RAW_MEMORY_COLUMN
     ied_measures = {
         "IEDRateAvg": {
             "title": f"{phase_name.title()}: Memory vs IEDRateAvg",
@@ -494,7 +707,7 @@ def run_phase_relationships(phase_name: str, summary_dir: Path, output_root: Pat
             y_col=memory_measure,
             title=meta["title"],
             xlabel=meta["xlabel"],
-            ylabel="avg_stim_dprime_diff",
+            ylabel=RAW_MEMORY_LABEL,
             filename=meta["filename"],
             color=meta["color"],
             output_dir=phase_output_dir,
@@ -511,6 +724,10 @@ def run_phase_relationships(phase_name: str, summary_dir: Path, output_root: Pat
         output_dir=phase_output_dir,
         memory_measure=memory_measure,
     )
+
+    if phase_name == "encoding":
+        run_encoding_stim_split_regressions(merged, phase_output_dir)
+        run_figure2a_like_encoding(merged, phase_output_dir)
 
     fig, axes = plt.subplots(2, 2, figsize=(12, 10))
     axes = axes.ravel()
@@ -534,7 +751,7 @@ def run_phase_relationships(phase_name: str, summary_dir: Path, output_root: Pat
         stats_row = correlation_summary.loc[correlation_summary["x_measure"] == measure].iloc[0]
         ax.set_title(meta["title"])
         ax.set_xlabel(meta["xlabel"])
-        ax.set_ylabel("avg_stim_dprime_diff")
+        ax.set_ylabel(RAW_MEMORY_LABEL)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
         ax.text(
@@ -552,7 +769,7 @@ def run_phase_relationships(phase_name: str, summary_dir: Path, output_root: Pat
             bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.75},
         )
 
-    fig.suptitle(f"{phase_name.title()}: Patient-Level IED Measures vs avg_stim_dprime_diff", y=1.02, fontsize=16)
+    fig.suptitle(f"{phase_name.title()}: Patient-Level IED Measures vs {RAW_MEMORY_LABEL}", y=1.02, fontsize=16)
     fig.tight_layout()
     fig.savefig(phase_output_dir / "memory_vs_ied_combined.png", bbox_inches="tight")
     if running_in_notebook():
@@ -566,7 +783,8 @@ def run_phase_relationships(phase_name: str, summary_dir: Path, output_root: Pat
 if __name__ == "__main__":
     behavior_df = pd.read_csv(BEHAVIOR_PATH)
     behavior_df["Patient"] = behavior_df["Patient"].astype("string").str.strip()
-    behavior_df["avg_stim_dprime_diff"] = pd.to_numeric(behavior_df["avg_stim_dprime_diff"], errors="coerce")
+    behavior_df[RAW_MEMORY_COLUMN] = pd.to_numeric(behavior_df[RAW_MEMORY_COLUMN], errors="coerce")
+    behavior_df[NORMALIZED_MEMORY_COLUMN] = zscore_series(behavior_df[RAW_MEMORY_COLUMN])
 
     phase_dirs = resolve_phase_dirs(IED_DIR)
     ran_any = False
