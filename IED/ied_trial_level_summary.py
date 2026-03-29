@@ -62,6 +62,28 @@ plt.style.use("default")
 plt.rcParams["figure.dpi"] = 140
 plt.rcParams["savefig.dpi"] = 300
 
+TIMING_LABELS = {
+    "DuringImg": "During Image",
+    "DuringStim": "During Stimulation",
+    "BeforeImgITI": "Before Image ITI",
+    "AfterImgITI": "After Image ITI",
+}
+STIM_LABELS = {"S": "Stim", "NS": "No Stim"}
+TISSUE_LABELS = {"G": "Gray Matter", "W": "White Matter"}
+TISSUE_COLORS = {"Gray Matter": "#4D4D4D", "White Matter": "#CFCFCF"}
+
+
+def normalize_region_value(value):
+    if pd.isna(value):
+        return pd.NA
+    raw = str(value).strip()
+    if not raw:
+        return pd.NA
+    canonical = raw.lower().replace("_", "").replace("-", "").replace(" ", "")
+    if canonical in {"hippocampalgrey", "hippocampus", "hippocampal"}:
+        return "Hippocampus"
+    return raw
+
 
 def first_nonmissing(series: pd.Series):
     nonmissing = series.dropna()
@@ -81,12 +103,24 @@ def split_channel_tokens(value) -> list[str]:
     return [token for token in tokens if token]
 
 
-def save_barplot(series: pd.Series, title: str, ylabel: str, filename: str, color: str) -> None:
+def save_barplot(
+    series: pd.Series,
+    title: str,
+    ylabel: str,
+    filename: str,
+    color: str,
+    output_dir: Path,
+    bar_color_map: dict[str, str] | None = None,
+) -> None:
     series = pd.to_numeric(series, errors="coerce").dropna()
     if series.empty:
         return
     fig, ax = plt.subplots(figsize=(7, 4.5))
-    ax.bar(series.index, series.values, color=color, edgecolor="black", linewidth=0.8)
+    if bar_color_map:
+        bar_colors = [bar_color_map.get(str(label), color) for label in series.index]
+    else:
+        bar_colors = color
+    ax.bar(series.index, series.values, color=bar_colors, edgecolor="black", linewidth=0.8)
     ax.set_title(title)
     ax.set_ylabel(ylabel)
     ax.set_xlabel("")
@@ -95,7 +129,7 @@ def save_barplot(series: pd.Series, title: str, ylabel: str, filename: str, colo
     for idx, value in enumerate(series.values):
         ax.text(idx, value, f"{value:.2f}", ha="center", va="bottom")
     fig.tight_layout()
-    fig.savefig(OUTPUT_DIR / filename, bbox_inches="tight")
+    fig.savefig(output_dir / filename, bbox_inches="tight")
     if running_in_notebook():
         plt.show()
     plt.close(fig)
@@ -107,6 +141,7 @@ def save_grouped_barplot(
     ylabel: str,
     filename: str,
     colors: list[str],
+    output_dir: Path,
 ) -> None:
     frame = frame.apply(pd.to_numeric, errors="coerce").fillna(0.0)
     if frame.empty:
@@ -145,7 +180,7 @@ def save_grouped_barplot(
     ax.spines["right"].set_visible(False)
     ax.legend(frameon=False)
     fig.tight_layout()
-    fig.savefig(OUTPUT_DIR / filename, bbox_inches="tight")
+    fig.savefig(output_dir / filename, bbox_inches="tight")
     if running_in_notebook():
         plt.show()
     plt.close(fig)
@@ -157,6 +192,7 @@ def save_horizontal_grouped_barplot(
     xlabel: str,
     filename: str,
     colors: list[str],
+    output_dir: Path,
 ) -> None:
     frame = frame.apply(pd.to_numeric, errors="coerce").fillna(0.0)
     if frame.empty:
@@ -185,7 +221,7 @@ def save_horizontal_grouped_barplot(
     ax.spines["right"].set_visible(False)
     ax.legend(frameon=False)
     fig.tight_layout()
-    fig.savefig(OUTPUT_DIR / filename, bbox_inches="tight")
+    fig.savefig(output_dir / filename, bbox_inches="tight")
     if running_in_notebook():
         plt.show()
     plt.close(fig)
@@ -197,6 +233,7 @@ def save_horizontal_barplot(
     xlabel: str,
     filename: str,
     color: str,
+    output_dir: Path,
 ) -> None:
     series = pd.to_numeric(series, errors="coerce")
     series = series[series.index.to_series().notna()].dropna()
@@ -213,7 +250,7 @@ def save_horizontal_barplot(
     for idx, value in enumerate(values):
         ax.text(value, idx, f" {value:.2f}", va="center", ha="left", fontsize=8)
     fig.tight_layout()
-    fig.savefig(OUTPUT_DIR / filename, bbox_inches="tight")
+    fig.savefig(output_dir / filename, bbox_inches="tight")
     if running_in_notebook():
         plt.show()
     plt.close(fig)
@@ -225,6 +262,7 @@ def save_horizontal_boxplot(
     xlabel: str,
     filename: str,
     color: str,
+    output_dir: Path,
 ) -> None:
     grouped = grouped_series.groupby(level=0)
     labels = list(grouped.groups.keys())
@@ -245,588 +283,464 @@ def save_horizontal_boxplot(
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     fig.tight_layout()
-    fig.savefig(OUTPUT_DIR / filename, bbox_inches="tight")
+    fig.savefig(output_dir / filename, bbox_inches="tight")
     if running_in_notebook():
         plt.show()
     plt.close(fig)
 
 
-# %% [markdown]
-# ## Load And Standardize The CSV
-
-# %%
-df = pd.read_csv(CSV_PATH)
-
-# Harmonize alternate column labels so study and test CSVs can flow through one pipeline.
-if "DuringImg" not in df.columns and "DuringImgITI" in df.columns:
-    df["DuringImg"] = df["DuringImgITI"]
-if "StimCond" not in df.columns and "Test" in df.columns:
-    df["StimCond"] = df["Test"]
-
-for required_col, default_value in {
-    "StimCond": pd.NA,
-    "DuringImg": "N",
-    "DuringStim": "N",
-    "BeforeImgITI": "N",
-    "AfterImgITI": "N",
-}.items():
-    if required_col not in df.columns:
-        df[required_col] = default_value
-
-string_columns = [
-    "Patient",
-    "Region",
-    "GrayMatter",
-    "Hemisphere",
-    "ChannelName",
-    "StimCond",
-    "DuringImg",
-    "DuringStim",
-    "BeforeImgITI",
-    "AfterImgITI",
-]
-
-for column in string_columns:
-    if column not in df.columns:
-        continue
-    df[column] = df[column].astype("string").str.strip()
-    df[column] = df[column].replace({"": pd.NA})
-
-df["StimCond"] = df["StimCond"].str.upper()
-df["StimCond"] = df["StimCond"].replace({"Y": "S", "N": "NS"})
-for column in ["DuringImg", "DuringStim", "BeforeImgITI", "AfterImgITI", "GrayMatter"]:
-    df[column] = df[column].str.upper()
-
-df["Trial"] = pd.to_numeric(df["Trial"], errors="coerce").astype("Int64")
-df["WeightedIEDRate"] = pd.to_numeric(df["WeightedIEDRate"], errors="coerce")
-df["IEDRateAvg"] = pd.to_numeric(df["IEDRateAvg"], errors="coerce")
-condition_columns = ["DuringImg", "DuringStim", "BeforeImgITI", "AfterImgITI"]
-
-print(f"Loaded {len(df):,} rows from {CSV_PATH}")
-display(df.head())
-
-
-# %% [markdown]
-# ## Compute TrialChannelSpread And PatientChannelSpread
-#
-# `TrialChannelSpread` counts the number of unique channels observed within each `Patient + Trial`
-# after splitting `ChannelName` on `_`.
-# `PatientChannelSpread` is the average `TrialChannelSpread` across all trials within a patient.
-
-# %%
-trial_channelspread = (
-    df.groupby(["Patient", "Trial"], dropna=False)["ChannelName"]
-    .agg(
-        TrialChannelSpread=lambda s: len(
-            {
-                channel
-                for value in s.dropna()
-                for channel in split_channel_tokens(value)
-            }
-        )
-    )
-    .reset_index()
-)
-
-patient_channelspread = (
-    trial_channelspread.groupby("Patient", dropna=False, as_index=False)
-    .agg(PatientChannelSpread=("TrialChannelSpread", "mean"))
-)
-
-df = df.merge(trial_channelspread, on=["Patient", "Trial"], how="left")
-df = df.merge(patient_channelspread, on="Patient", how="left")
-
-trial_channelspread.to_csv(OUTPUT_DIR / "trial_channelspread_summary.csv", index=False)
-patient_channelspread.to_csv(OUTPUT_DIR / "patient_channelspread_summary.csv", index=False)
-
-print("TrialChannelSpread and PatientChannelSpread added.")
-display(trial_channelspread.head())
-display(patient_channelspread.head())
-
-
-# %% [markdown]
-# ## Compute TrialRegionSpread And PatientRegionSpread
-#
-# `TrialRegionSpread` counts the number of unique non-missing `Region` labels within each
-# `Patient + Trial`. `PatientRegionSpread` is the average `TrialRegionSpread` across all trials
-# within a patient.
-
-# %%
-trial_regionspread = (
-    df.groupby(["Patient", "Trial"], dropna=False)["Region"]
-    .agg(TrialRegionSpread=lambda s: s.dropna().nunique())
-    .reset_index()
-)
-
-patient_regionspread = (
-    trial_regionspread.groupby("Patient", dropna=False, as_index=False)
-    .agg(PatientRegionSpread=("TrialRegionSpread", "mean"))
-)
-
-df = df.merge(trial_regionspread, on=["Patient", "Trial"], how="left")
-df = df.merge(patient_regionspread, on="Patient", how="left")
-
-trial_regionspread.to_csv(OUTPUT_DIR / "trial_regionspread_summary.csv", index=False)
-patient_regionspread.to_csv(OUTPUT_DIR / "patient_regionspread_summary.csv", index=False)
-
-print("TrialRegionSpread and PatientRegionSpread added.")
-display(trial_regionspread.head())
-display(patient_regionspread.head())
-
-
-# %% [markdown]
-# ## Compute Subject-Level IEDRateAvg From Trial-Level WeightedIEDRate
-#
-# `IEDRateAvg` is computed in two steps:
-# 1. Collapse duplicate `Patient + Trial` rows by averaging `WeightedIEDRate` within each trial.
-# 2. Average those trial-level values across all available trials within each patient.
-#
-# The subject-level result is then written back onto every row for that patient.
-
-# %%
-trial_weighted_iedrate = (
-    df.groupby(["Patient", "Trial"], dropna=False, as_index=False)
-    .agg(trial_weighted_iedrate_mean=("WeightedIEDRate", "mean"))
-)
-
-patient_iedrateavg = (
-    trial_weighted_iedrate.groupby("Patient", dropna=False, as_index=False)
-    .agg(
-        IEDRateAvg=("trial_weighted_iedrate_mean", "mean"),
-        trials_with_weighted_iedrate=("trial_weighted_iedrate_mean", lambda s: s.notna().sum()),
-    )
-)
-
-df = df.drop(columns=["IEDRateAvg"]).merge(patient_iedrateavg[["Patient", "IEDRateAvg"]], on="Patient", how="left")
-
-trial_weighted_iedrate.to_csv(OUTPUT_DIR / "trial_weighted_iedrate_summary.csv", index=False)
-patient_iedrateavg.to_csv(OUTPUT_DIR / "patient_iedrateavg_summary.csv", index=False)
-df.to_csv(AUGMENTED_CSV_PATH, index=False)
-
-print(f"Updated CSV with populated IEDRateAvg written to: {AUGMENTED_CSV_PATH}")
-display(patient_iedrateavg.head())
-
-
-# %% [markdown]
-# ## Patient-Level PatientChannelSpread Figure
-
-# %%
-patient_channelspread_plot = (
-    patient_channelspread.sort_values("PatientChannelSpread", ascending=True, kind="stable")
-    .set_index("Patient")["PatientChannelSpread"]
-)
-
-save_horizontal_barplot(
-    patient_channelspread_plot,
-    title="PatientChannelSpread By Patient",
-    xlabel="Average unique channels per trial",
-    filename="patient_channelspread_by_patient.png",
-    color="#2A6F97",
-)
-
-
-# %% [markdown]
-# ## Patient-Level IEDRateAvg Figure
-#
-# `IEDRateAvg` shown here is the patient-level average of trial-level `WeightedIEDRate`.
-
-# %%
-patient_iedrateavg_plot = (
-    patient_iedrateavg.sort_values("IEDRateAvg", ascending=True, kind="stable")
-    .set_index("Patient")["IEDRateAvg"]
-)
-
-save_horizontal_barplot(
-    patient_iedrateavg_plot,
-    title="IEDRateAvg By Patient (Average of Trial-Level WeightedIEDRate)",
-    xlabel="IEDRateAvg",
-    filename="patient_iedrateavg_by_patient.png",
-    color="#C97C10",
-)
-
-
-# %% [markdown]
-# ## Patient-Level PatientRegionSpread Figure
-
-# %%
-patient_regionspread_plot = (
-    patient_regionspread.sort_values("PatientRegionSpread", ascending=True, kind="stable")
-    .set_index("Patient")["PatientRegionSpread"]
-)
-
-save_horizontal_barplot(
-    patient_regionspread_plot,
-    title="PatientRegionSpread By Patient",
-    xlabel="Average unique regions per trial",
-    filename="patient_regionspread_by_patient.png",
-    color="#7F5539",
-)
-
-
-# %% [markdown]
-# ## Trial-Level RegionSpread Distribution By Patient
-
-# %%
-region_distribution_order = (
-    patient_regionspread.sort_values("PatientRegionSpread", ascending=True, kind="stable")["Patient"]
-)
-trial_regionspread_distribution = (
-    trial_regionspread.set_index("Patient").loc[region_distribution_order, "TrialRegionSpread"]
-)
-
-save_horizontal_boxplot(
-    trial_regionspread_distribution,
-    title="Trial-Level RegionSpread Distribution By Patient",
-    xlabel="Unique regions within a trial",
-    filename="trial_regionspread_distribution_by_patient.png",
-    color="#B08968",
-)
-
-
-# %% [markdown]
-# ## Collapse To Unique Patient-Trial Rows
-
-# %%
-trial_level = (
-    df.groupby(["Patient", "Trial"], dropna=False, as_index=False)
-    .agg(
-        StimCond=("StimCond", first_nonmissing),
-        DuringImg=("DuringImg", any_yes),
-        DuringStim=("DuringStim", any_yes),
-        BeforeImgITI=("BeforeImgITI", any_yes),
-        AfterImgITI=("AfterImgITI", any_yes),
-    )
-    .sort_values(["Patient", "Trial"], kind="stable")
-)
-
-trial_level.to_csv(OUTPUT_DIR / "collapsed_trial_level.csv", index=False)
-
-print(f"Collapsed to {len(trial_level):,} unique patient-trial rows")
-display(trial_level.head())
-
-
-# %% [markdown]
-# ## Per-Patient Trial Summary
-
-# %%
-patient_trial_summary = (
-    trial_level.groupby("Patient", dropna=False)
-    .agg(
-        unique_ied_trials=("Trial", "count"),
-        stimulated_trials=("StimCond", lambda s: (s == "S").sum()),
-        nonstim_trials=("StimCond", lambda s: (s == "NS").sum()),
-        during_img_trials=("DuringImg", lambda s: (s == "Y").sum()),
-        during_stim_trials=("DuringStim", lambda s: (s == "Y").sum()),
-        before_img_iti_trials=("BeforeImgITI", lambda s: (s == "Y").sum()),
-        after_img_iti_trials=("AfterImgITI", lambda s: (s == "Y").sum()),
-    )
-    .reset_index()
-)
-
-count_columns = [
-    "stimulated_trials",
-    "nonstim_trials",
-    "during_img_trials",
-    "during_stim_trials",
-    "before_img_iti_trials",
-    "after_img_iti_trials",
-]
-for column in count_columns:
-    patient_trial_summary[f"{column}_pct"] = (
-        patient_trial_summary[column] / patient_trial_summary["unique_ied_trials"]
-    )
-
-patient_trial_summary.to_csv(OUTPUT_DIR / "patient_trial_summary.csv", index=False)
-display(patient_trial_summary.head())
-
-
-# %% [markdown]
-# ## Across-Patient Averages
-
-# %%
-overall_trial_summary = pd.DataFrame(
-    {
-        "metric": [
-            "Average unique IED-positive trials per patient",
-            "Average stimulated trials per patient",
-            "Average non-stimulated trials per patient",
-            "Average proportion DuringImg",
-            "Average proportion DuringStim",
-            "Average proportion BeforeImgITI",
-            "Average proportion AfterImgITI",
-        ],
-        "value": [
-            patient_trial_summary["unique_ied_trials"].mean(),
-            patient_trial_summary["stimulated_trials"].mean(),
-            patient_trial_summary["nonstim_trials"].mean(),
-            patient_trial_summary["during_img_trials_pct"].mean(),
-            patient_trial_summary["during_stim_trials_pct"].mean(),
-            patient_trial_summary["before_img_iti_trials_pct"].mean(),
-            patient_trial_summary["after_img_iti_trials_pct"].mean(),
-        ],
-    }
-)
-
-overall_trial_summary.to_csv(OUTPUT_DIR / "overall_trial_summary.csv", index=False)
-display(overall_trial_summary)
-
-
-# %% [markdown]
-# ## Plot Average Trial-Level Condition Distribution
-
-# %%
-condition_plot_values = pd.Series(
-    {
-        "DuringImg": patient_trial_summary["during_img_trials_pct"].mean() * 100,
-        "DuringStim": patient_trial_summary["during_stim_trials_pct"].mean() * 100,
-        "BeforeImgITI": patient_trial_summary["before_img_iti_trials_pct"].mean() * 100,
-        "AfterImgITI": patient_trial_summary["after_img_iti_trials_pct"].mean() * 100,
-    }
-)
-
-save_barplot(
-    condition_plot_values,
-    title="Average Timing Distribution Across Patients",
-    ylabel="Average % of unique IED-positive trials",
-    filename="average_condition_distribution.png",
-    color="#5B8E7D",
-)
-
-condition_plot_values.to_csv(OUTPUT_DIR / "average_condition_distribution.csv", header=["average_percent"])
-condition_plot_values
-
-
-# %% [markdown]
-# ## Plot Average Stimulated vs Non-Stimulated Trial Counts
-
-# %%
-stim_plot_values = pd.Series(
-    {
-        "S": patient_trial_summary["stimulated_trials"].mean(),
-        "NS": patient_trial_summary["nonstim_trials"].mean(),
-    }
-)
-
-save_barplot(
-    stim_plot_values,
-    title="Average Unique IED-Positive Trials Per Patient by StimCond",
-    ylabel="Average count of unique trials",
-    filename="average_stim_distribution.png",
-    color="#D98E04",
-)
-
-stim_plot_values.to_csv(OUTPUT_DIR / "average_stim_distribution.csv", header=["average_count"])
-stim_plot_values
-
-
-# %% [markdown]
-# ## Gray Matter vs White Matter Distribution
-
-# %%
-graymatter_qa = (
-    df.groupby("Patient", dropna=False)["GrayMatter"]
-    .value_counts(dropna=False)
-    .unstack(fill_value=0)
-    .reset_index()
-)
-graymatter_qa.to_csv(OUTPUT_DIR / "patient_graymatter_qa_counts.csv", index=False)
-
-graymatter_gw = df[df["GrayMatter"].isin(["G", "W"])].copy()
-
-patient_graymatter_summary = (
-    graymatter_gw.groupby("Patient", dropna=False)["GrayMatter"]
-    .value_counts(normalize=True)
-    .rename("proportion")
-    .reset_index()
-    .pivot(index="Patient", columns="GrayMatter", values="proportion")
-    .fillna(0)
-    .reset_index()
-)
-
-patient_graymatter_summary.to_csv(OUTPUT_DIR / "patient_graymatter_gw_summary.csv", index=False)
-display(patient_graymatter_summary.head())
-
-
-# %% [markdown]
-# ## Plot Average Gray Matter vs White Matter Distribution
-
-# %%
-graymatter_plot_values = pd.Series(
-    {
-        "G": patient_graymatter_summary.get("G", pd.Series(dtype=float)).mean() * 100,
-        "W": patient_graymatter_summary.get("W", pd.Series(dtype=float)).mean() * 100,
-    }
-)
-
-save_barplot(
-    graymatter_plot_values,
-    title="Average G vs W Distribution Across Patients",
-    ylabel="Average % of row-level IED observations",
-    filename="average_graymatter_distribution.png",
-    color="#4C78A8",
-)
-
-graymatter_plot_values.to_csv(OUTPUT_DIR / "average_graymatter_distribution.csv", header=["average_percent"])
-graymatter_plot_values
-
-
-# %% [markdown]
-# ## Condition Distribution In The Context Of Stimulation
-
-# %%
-trial_condition_binary = trial_level.copy()
-for column in condition_columns:
-    trial_condition_binary[column] = trial_condition_binary[column].eq("Y").astype(int)
-
-condition_by_stim_counts = (
-    trial_condition_binary.groupby("StimCond")[condition_columns].sum().reindex(["S", "NS"])
-)
-stim_trial_totals = trial_condition_binary["StimCond"].value_counts().reindex(["S", "NS"])
-condition_by_stim_percent = condition_by_stim_counts.div(stim_trial_totals, axis=0) * 100
-
-condition_by_stim_counts.to_csv(OUTPUT_DIR / "condition_by_stimulation_counts.csv")
-condition_by_stim_percent.to_csv(OUTPUT_DIR / "condition_by_stimulation_percent.csv")
-
-display(condition_by_stim_counts)
-display(condition_by_stim_percent.round(2))
-
-save_grouped_barplot(
-    condition_by_stim_percent.T,
-    title="Condition Distribution Within Stimulated vs Non-Stimulated Trials",
-    ylabel="% of unique trials within StimCond",
-    filename="condition_by_stimulation_percent.png",
-    colors=["#D98E04", "#7A8FA6"],
-)
-
-
-# %% [markdown]
-# ## Condition Distribution By Gray Matter vs White Matter
-#
-# This section uses row-level observations restricted to `GrayMatter` values `G` and `W`.
-
-# %%
-condition_by_gray_counts = (
-    graymatter_gw.groupby("GrayMatter")[condition_columns]
-    .agg(lambda s: (s == "Y").sum())
-    .reindex(["G", "W"])
-)
-graymatter_totals = graymatter_gw["GrayMatter"].value_counts().reindex(["G", "W"])
-condition_by_gray_percent = condition_by_gray_counts.div(graymatter_totals, axis=0) * 100
-
-condition_by_gray_counts.to_csv(OUTPUT_DIR / "condition_by_graymatter_counts.csv")
-condition_by_gray_percent.to_csv(OUTPUT_DIR / "condition_by_graymatter_percent.csv")
-
-display(condition_by_gray_counts)
-display(condition_by_gray_percent.round(2))
-
-save_grouped_barplot(
-    condition_by_gray_percent.T,
-    title="Condition Distribution Within Gray vs White Matter",
-    ylabel="% of row-level observations within tissue class",
-    filename="condition_by_graymatter_percent.png",
-    colors=["#4C78A8", "#E45756"],
-)
-
-
-# %% [markdown]
-# ## Region Distribution And Dominant Gray vs White Matter
-#
-# Dominance is called from `G` vs `W` counts only. Regions with no `G` or `W` rows are labeled
-# `No G/W observations`.
-
-# %%
-region_tissue_counts = pd.crosstab(
-    df["Region"].fillna("Missing"),
-    df["GrayMatter"].fillna("Missing"),
-)
-for column in ["G", "W", "B", "Missing"]:
-    if column not in region_tissue_counts.columns:
-        region_tissue_counts[column] = 0
-
-region_tissue_summary = (
-    region_tissue_counts[["G", "W", "B", "Missing"]]
-    .reset_index()
-    .rename(columns={"Region": "Region"})
-)
-region_tissue_summary["gw_total"] = region_tissue_summary["G"] + region_tissue_summary["W"]
-region_tissue_summary["gray_pct_within_gw"] = (
-    region_tissue_summary["G"] / region_tissue_summary["gw_total"]
-).where(region_tissue_summary["gw_total"] > 0)
-region_tissue_summary["white_pct_within_gw"] = (
-    region_tissue_summary["W"] / region_tissue_summary["gw_total"]
-).where(region_tissue_summary["gw_total"] > 0)
-
-
 def dominant_gw_tissue(row: pd.Series) -> str:
     if row["gw_total"] == 0:
-        return "No G/W observations"
+        return "No Gray Matter/White Matter observations"
     if row["G"] > row["W"]:
-        return "G"
+        return "Gray Matter"
     if row["W"] > row["G"]:
-        return "W"
+        return "White Matter"
     return "Tie"
 
 
-region_tissue_summary["dominant_gw_tissue"] = region_tissue_summary.apply(dominant_gw_tissue, axis=1)
-region_tissue_summary = region_tissue_summary.sort_values(
-    ["gw_total", "G", "W"], ascending=[False, False, False], kind="stable"
-).reset_index(drop=True)
+def standardize_ied_frame(df: pd.DataFrame) -> pd.DataFrame:
+    frame = df.copy()
 
-region_tissue_summary.to_csv(OUTPUT_DIR / "region_graywhite_summary.csv", index=False)
-display(region_tissue_summary.head(20))
+    if "DuringImg" not in frame.columns and "DuringImgITI" in frame.columns:
+        frame["DuringImg"] = frame["DuringImgITI"]
+    if "StimCond" not in frame.columns and "Test" in frame.columns:
+        frame["StimCond"] = frame["Test"]
 
-region_plot_df = (
-    region_tissue_summary.loc[region_tissue_summary["gw_total"] > 0, ["Region", "G", "W"]]
-    .head(15)
-    .set_index("Region")
-)
+    for required_col, default_value in {
+        "StimCond": pd.NA,
+        "DuringImg": "N",
+        "DuringStim": "N",
+        "BeforeImgITI": "N",
+        "AfterImgITI": "N",
+    }.items():
+        if required_col not in frame.columns:
+            frame[required_col] = default_value
 
-save_horizontal_grouped_barplot(
-    region_plot_df,
-    title="Top Regions By Gray vs White Matter Counts",
-    xlabel="Row-level observation count",
-    filename="region_graywhite_top15.png",
-    colors=["#4C78A8", "#E45756"],
-)
+    string_columns = [
+        "Patient",
+        "Region",
+        "GrayMatter",
+        "Hemisphere",
+        "ChannelName",
+        "StimCond",
+        "DuringImg",
+        "DuringStim",
+        "BeforeImgITI",
+        "AfterImgITI",
+        "Encoding",
+        "Test",
+    ]
+    for column in string_columns:
+        if column not in frame.columns:
+            continue
+        frame[column] = frame[column].astype("string").str.strip()
+        frame[column] = frame[column].replace({"": pd.NA})
+
+    frame["StimCond"] = frame["StimCond"].str.upper()
+    frame["StimCond"] = frame["StimCond"].replace({"Y": "S", "N": "NS"})
+    for column in ["DuringImg", "DuringStim", "BeforeImgITI", "AfterImgITI", "GrayMatter", "Encoding", "Test"]:
+        if column in frame.columns:
+            frame[column] = frame[column].str.upper()
+
+    if "Region" in frame.columns:
+        frame["Region"] = frame["Region"].apply(normalize_region_value)
+
+    frame["Trial"] = pd.to_numeric(frame["Trial"], errors="coerce").astype("Int64")
+    frame["WeightedIEDRate"] = pd.to_numeric(frame.get("WeightedIEDRate"), errors="coerce")
+    if "IEDRateAvg" in frame.columns:
+        frame["IEDRateAvg"] = pd.to_numeric(frame["IEDRateAvg"], errors="coerce")
+    else:
+        frame["IEDRateAvg"] = pd.NA
+    return frame
 
 
-# %% [markdown]
-# ## Key Summary Numbers
+def load_input_frames() -> tuple[pd.DataFrame, list[str]]:
+    if INPUT_NAME != DEFAULT_INPUT_NAME:
+        frame = pd.read_csv(CSV_PATH)
+        return standardize_ied_frame(frame), [str(CSV_PATH)]
 
-# %%
-print("Average unique IED-positive trials per patient:")
-print(f"  {patient_trial_summary['unique_ied_trials'].mean():.2f}")
+    default_candidates = [
+        BASE_DIR / "IED" / "AMMEBLAES_IEDs_trial_level_dissertation_study_usethis_cleaned.csv",
+        BASE_DIR / "IED" / "AMMEBLAES_IEDs_trial_level_dissertation_test_usethis_cleaned.csv",
+    ]
+    existing = [p for p in default_candidates if p.exists()]
+    if not existing:
+        frame = pd.read_csv(CSV_PATH)
+        return standardize_ied_frame(frame), [str(CSV_PATH)]
 
-print("\nSubject-level IEDRateAvg from trial-level WeightedIEDRate:")
-print(f"  Mean across patients: {patient_iedrateavg['IEDRateAvg'].mean():.4f}")
-print(f"  Patients with usable WeightedIEDRate trials: {patient_iedrateavg['IEDRateAvg'].notna().sum()}")
+    frames = [standardize_ied_frame(pd.read_csv(path)) for path in existing]
+    return pd.concat(frames, ignore_index=True), [str(path) for path in existing]
 
-print("\nChannel spread summaries:")
-print(f"  Mean TrialChannelSpread across patient-trials: {trial_channelspread['TrialChannelSpread'].mean():.2f}")
-print(f"  Mean PatientChannelSpread across patients: {patient_channelspread['PatientChannelSpread'].mean():.2f}")
 
-print("\nAverage timing-flag percentages across patients:")
-for label, value in condition_plot_values.items():
-    print(f"  {label}: {value:.2f}%")
+def build_phase_splits(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    encoding_mask = pd.Series(False, index=df.index)
+    retrieval_mask = pd.Series(False, index=df.index)
+    if "Encoding" in df.columns:
+        encoding_mask = encoding_mask | (df["Encoding"] == "Y")
+    if "Test" in df.columns:
+        retrieval_mask = retrieval_mask | (df["Test"] == "Y")
 
-print("\nAverage stimulated vs non-stimulated unique trial counts per patient:")
-for label, value in stim_plot_values.items():
-    print(f"  {label}: {value:.2f}")
+    return {
+        "combined": df.copy(),
+        "encoding": df.loc[encoding_mask].copy(),
+        "retrieval": df.loc[retrieval_mask].copy(),
+    }
 
-print("\nAverage GrayMatter distribution across patients (G/W only):")
-for label, value in graymatter_plot_values.items():
-    print(f"  {label}: {value:.2f}%")
 
-print("\nCondition distribution within stimulation groups (% of unique trials):")
-print(condition_by_stim_percent.round(2))
+def run_summary_for_subset(df_in: pd.DataFrame, output_dir: Path, subset_label: str) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    phase_title = subset_label.title()
+    if subset_label == "retrieval":
+        condition_columns = ["DuringImg", "BeforeImgITI"]
+    else:
+        condition_columns = ["DuringImg", "DuringStim", "BeforeImgITI", "AfterImgITI"]
+    condition_display = {col: TIMING_LABELS[col] for col in condition_columns}
 
-print("\nCondition distribution within gray vs white matter (% of row-level observations):")
-print(condition_by_gray_percent.round(2))
+    if subset_label == "retrieval":
+        for stale_name in [
+            "condition_by_stimulation_counts.csv",
+            "condition_by_stimulation_percent.csv",
+            "condition_by_stimulation_percent.png",
+        ]:
+            stale_path = output_dir / stale_name
+            if stale_path.exists():
+                stale_path.unlink()
 
-print("\nRegion gray/white dominance summary:")
-dominance_counts = region_tissue_summary["dominant_gw_tissue"].value_counts()
-for label, value in dominance_counts.items():
-    print(f"  {label}: {value}")
+    if df_in.empty:
+        print(f"[{subset_label}] No rows available. Skipping.")
+        return
 
-print(f"\nAugmented CSV saved to: {AUGMENTED_CSV_PATH}")
-print(f"\nOutputs saved in: {OUTPUT_DIR}")
+    print(f"[{subset_label}] Running summary on {len(df_in):,} rows -> {output_dir}")
+    df = df_in.copy()
+
+    trial_channelspread = (
+        df.groupby(["Patient", "Trial"], dropna=False)["ChannelName"]
+        .agg(
+            TrialChannelSpread=lambda s: len(
+                {
+                    channel
+                    for value in s.dropna()
+                    for channel in split_channel_tokens(value)
+                }
+            )
+        )
+        .reset_index()
+    )
+    patient_channelspread = (
+        trial_channelspread.groupby("Patient", dropna=False, as_index=False)
+        .agg(PatientChannelSpread=("TrialChannelSpread", "mean"))
+    )
+    df = df.merge(trial_channelspread, on=["Patient", "Trial"], how="left")
+    df = df.merge(patient_channelspread, on="Patient", how="left")
+    trial_channelspread.to_csv(output_dir / "trial_channelspread_summary.csv", index=False)
+    patient_channelspread.to_csv(output_dir / "patient_channelspread_summary.csv", index=False)
+
+    trial_regionspread = (
+        df.groupby(["Patient", "Trial"], dropna=False)["Region"]
+        .agg(TrialRegionSpread=lambda s: s.dropna().nunique())
+        .reset_index()
+    )
+    patient_regionspread = (
+        trial_regionspread.groupby("Patient", dropna=False, as_index=False)
+        .agg(PatientRegionSpread=("TrialRegionSpread", "mean"))
+    )
+    df = df.merge(trial_regionspread, on=["Patient", "Trial"], how="left")
+    df = df.merge(patient_regionspread, on="Patient", how="left")
+    trial_regionspread.to_csv(output_dir / "trial_regionspread_summary.csv", index=False)
+    patient_regionspread.to_csv(output_dir / "patient_regionspread_summary.csv", index=False)
+
+    trial_weighted_iedrate = (
+        df.groupby(["Patient", "Trial"], dropna=False, as_index=False)
+        .agg(trial_weighted_iedrate_mean=("WeightedIEDRate", "mean"))
+    )
+    patient_iedrateavg = (
+        trial_weighted_iedrate.groupby("Patient", dropna=False, as_index=False)
+        .agg(
+            IEDRateAvg=("trial_weighted_iedrate_mean", "mean"),
+            trials_with_weighted_iedrate=("trial_weighted_iedrate_mean", lambda s: s.notna().sum()),
+        )
+    )
+    df = df.drop(columns=["IEDRateAvg"], errors="ignore").merge(
+        patient_iedrateavg[["Patient", "IEDRateAvg"]],
+        on="Patient",
+        how="left",
+    )
+    trial_weighted_iedrate.to_csv(output_dir / "trial_weighted_iedrate_summary.csv", index=False)
+    patient_iedrateavg.to_csv(output_dir / "patient_iedrateavg_summary.csv", index=False)
+    df.to_csv(output_dir / f"{subset_label}_with_IEDRateAvg.csv", index=False)
+
+    patient_channelspread_plot = (
+        patient_channelspread.sort_values("PatientChannelSpread", ascending=True, kind="stable")
+        .set_index("Patient")["PatientChannelSpread"]
+    )
+    save_horizontal_barplot(
+        patient_channelspread_plot,
+        title=f"{phase_title}: PatientChannelSpread By Patient",
+        xlabel="Average unique channels per trial",
+        filename="patient_channelspread_by_patient.png",
+        color="#2A6F97",
+        output_dir=output_dir,
+    )
+
+    patient_iedrateavg_plot = (
+        patient_iedrateavg.sort_values("IEDRateAvg", ascending=True, kind="stable")
+        .set_index("Patient")["IEDRateAvg"]
+    )
+    save_horizontal_barplot(
+        patient_iedrateavg_plot,
+        title=f"{phase_title}: IEDRateAvg By Patient (Average of Trial-Level WeightedIEDRate)",
+        xlabel="IEDRateAvg",
+        filename="patient_iedrateavg_by_patient.png",
+        color="#C97C10",
+        output_dir=output_dir,
+    )
+
+    patient_regionspread_plot = (
+        patient_regionspread.sort_values("PatientRegionSpread", ascending=True, kind="stable")
+        .set_index("Patient")["PatientRegionSpread"]
+    )
+    save_horizontal_barplot(
+        patient_regionspread_plot,
+        title=f"{phase_title}: PatientRegionSpread By Patient",
+        xlabel="Average unique regions per trial",
+        filename="patient_regionspread_by_patient.png",
+        color="#7F5539",
+        output_dir=output_dir,
+    )
+
+    region_distribution_order = (
+        patient_regionspread.sort_values("PatientRegionSpread", ascending=True, kind="stable")["Patient"]
+    )
+    trial_regionspread_distribution = (
+        trial_regionspread.set_index("Patient").loc[region_distribution_order, "TrialRegionSpread"]
+    )
+    save_horizontal_boxplot(
+        trial_regionspread_distribution,
+        title=f"{phase_title}: Trial-Level RegionSpread Distribution By Patient",
+        xlabel="Unique regions within a trial",
+        filename="trial_regionspread_distribution_by_patient.png",
+        color="#B08968",
+        output_dir=output_dir,
+    )
+
+    trial_agg = {"StimCond": ("StimCond", first_nonmissing)}
+    for col in condition_columns:
+        trial_agg[col] = (col, any_yes)
+    trial_level = (
+        df.groupby(["Patient", "Trial"], dropna=False, as_index=False)
+        .agg(**trial_agg)
+        .sort_values(["Patient", "Trial"], kind="stable")
+    )
+    trial_level.to_csv(output_dir / "collapsed_trial_level.csv", index=False)
+
+    patient_trial_agg = {
+        "unique_ied_trials": ("Trial", "count"),
+        "stimulated_trials": ("StimCond", lambda s: (s == "S").sum()),
+        "nonstim_trials": ("StimCond", lambda s: (s == "NS").sum()),
+    }
+    condition_metric_map = {
+        "DuringImg": "during_img_trials",
+        "DuringStim": "during_stim_trials",
+        "BeforeImgITI": "before_img_iti_trials",
+        "AfterImgITI": "after_img_iti_trials",
+    }
+    for col in condition_columns:
+        metric_name = condition_metric_map[col]
+        patient_trial_agg[metric_name] = (col, lambda s: (s == "Y").sum())
+
+    patient_trial_summary = trial_level.groupby("Patient", dropna=False).agg(**patient_trial_agg).reset_index()
+    pct_count_columns = ["stimulated_trials", "nonstim_trials"] + [condition_metric_map[col] for col in condition_columns]
+    for column in pct_count_columns:
+        patient_trial_summary[f"{column}_pct"] = patient_trial_summary[column] / patient_trial_summary["unique_ied_trials"]
+
+    patient_trial_summary.to_csv(output_dir / "patient_trial_summary.csv", index=False)
+
+    overall_metrics = [
+        ("Average unique IED-positive trials per patient", patient_trial_summary["unique_ied_trials"].mean()),
+        ("Average stimulated trials per patient", patient_trial_summary["stimulated_trials"].mean()),
+        ("Average non-stimulated trials per patient", patient_trial_summary["nonstim_trials"].mean()),
+    ]
+    for col in condition_columns:
+        metric_name = condition_metric_map[col]
+        overall_metrics.append((f"Average proportion {condition_display[col]}", patient_trial_summary[f"{metric_name}_pct"].mean()))
+    overall_trial_summary = pd.DataFrame(overall_metrics, columns=["metric", "value"])
+    overall_trial_summary.to_csv(output_dir / "overall_trial_summary.csv", index=False)
+
+    condition_plot_values = pd.Series(
+        {
+            condition_display[col]: patient_trial_summary[f"{condition_metric_map[col]}_pct"].mean() * 100
+            for col in condition_columns
+        }
+    )
+    save_barplot(
+        condition_plot_values,
+        title=f"{phase_title}: Average Timing Distribution Across Patients",
+        ylabel="Average % of unique IED-positive trials",
+        filename="average_condition_distribution.png",
+        color="#5B8E7D",
+        output_dir=output_dir,
+    )
+    condition_plot_values.to_csv(output_dir / "average_condition_distribution.csv", header=["average_percent"])
+
+    stim_plot_values = pd.Series(
+        {
+            "Stim": patient_trial_summary["stimulated_trials"].mean(),
+            "No Stim": patient_trial_summary["nonstim_trials"].mean(),
+        }
+    )
+    save_barplot(
+        stim_plot_values,
+        title=f"{phase_title}: Average Unique IED-Positive Trials Per Patient by Stim Condition",
+        ylabel="Average count of unique trials",
+        filename="average_stim_distribution.png",
+        color="#D98E04",
+        output_dir=output_dir,
+    )
+    stim_plot_values.to_csv(output_dir / "average_stim_distribution.csv", header=["average_count"])
+
+    graymatter_qa = (
+        df.groupby("Patient", dropna=False)["GrayMatter"]
+        .value_counts(dropna=False)
+        .unstack(fill_value=0)
+        .reset_index()
+    )
+    graymatter_qa.to_csv(output_dir / "patient_graymatter_qa_counts.csv", index=False)
+
+    graymatter_gw = df[df["GrayMatter"].isin(["G", "W"])].copy()
+    patient_graymatter_summary = (
+        graymatter_gw.groupby("Patient", dropna=False)["GrayMatter"]
+        .value_counts(normalize=True)
+        .rename("proportion")
+        .reset_index()
+        .pivot(index="Patient", columns="GrayMatter", values="proportion")
+        .fillna(0)
+        .reset_index()
+    )
+    patient_graymatter_summary = patient_graymatter_summary.rename(columns=TISSUE_LABELS)
+    patient_graymatter_summary.to_csv(output_dir / "patient_graymatter_gw_summary.csv", index=False)
+
+    graymatter_plot_values = pd.Series(
+        {
+            "Gray Matter": patient_graymatter_summary.get("Gray Matter", pd.Series(dtype=float)).mean() * 100,
+            "White Matter": patient_graymatter_summary.get("White Matter", pd.Series(dtype=float)).mean() * 100,
+        }
+    )
+    save_barplot(
+        graymatter_plot_values,
+        title=f"{phase_title}: Average Gray Matter vs White Matter Distribution Across Patients",
+        ylabel="Average % of row-level IED observations",
+        filename="average_graymatter_distribution.png",
+        color="#4D4D4D",
+        output_dir=output_dir,
+        bar_color_map=TISSUE_COLORS,
+    )
+    graymatter_plot_values.to_csv(output_dir / "average_graymatter_distribution.csv", header=["average_percent"])
+
+    if subset_label != "retrieval":
+        trial_condition_binary = trial_level.copy()
+        for column in condition_columns:
+            trial_condition_binary[column] = trial_condition_binary[column].eq("Y").astype(int)
+
+        condition_by_stim_counts = (
+            trial_condition_binary.groupby("StimCond")[condition_columns].sum().reindex(["S", "NS"])
+        )
+        stim_trial_totals = trial_condition_binary["StimCond"].value_counts().reindex(["S", "NS"])
+        condition_by_stim_percent = condition_by_stim_counts.div(stim_trial_totals, axis=0) * 100
+        condition_by_stim_counts = condition_by_stim_counts.rename(index=STIM_LABELS, columns=TIMING_LABELS)
+        condition_by_stim_percent = condition_by_stim_percent.rename(index=STIM_LABELS, columns=TIMING_LABELS)
+        condition_by_stim_counts.to_csv(output_dir / "condition_by_stimulation_counts.csv")
+        condition_by_stim_percent.to_csv(output_dir / "condition_by_stimulation_percent.csv")
+        save_grouped_barplot(
+            condition_by_stim_percent.T,
+            title=f"{phase_title}: Condition Distribution Within Stimulated vs Non-Stimulated Trials",
+            ylabel="% of unique trials within stimulation condition",
+            filename="condition_by_stimulation_percent.png",
+            colors=["#D98E04", "#7A8FA6"],
+            output_dir=output_dir,
+        )
+
+    condition_by_gray_counts = (
+        graymatter_gw.groupby("GrayMatter")[condition_columns]
+        .agg(lambda s: (s == "Y").sum())
+        .reindex(["G", "W"])
+    )
+    graymatter_totals = graymatter_gw["GrayMatter"].value_counts().reindex(["G", "W"])
+    condition_by_gray_percent = condition_by_gray_counts.div(graymatter_totals, axis=0) * 100
+    condition_by_gray_counts = condition_by_gray_counts.rename(index=TISSUE_LABELS, columns=TIMING_LABELS)
+    condition_by_gray_percent = condition_by_gray_percent.rename(index=TISSUE_LABELS, columns=TIMING_LABELS)
+    condition_by_gray_counts.to_csv(output_dir / "condition_by_graymatter_counts.csv")
+    condition_by_gray_percent.to_csv(output_dir / "condition_by_graymatter_percent.csv")
+    save_grouped_barplot(
+        condition_by_gray_percent.T,
+        title=f"{phase_title}: Condition Distribution Within Gray Matter vs White Matter",
+        ylabel="% of row-level observations within tissue class",
+        filename="condition_by_graymatter_percent.png",
+        colors=[TISSUE_COLORS["Gray Matter"], TISSUE_COLORS["White Matter"]],
+        output_dir=output_dir,
+    )
+
+    region_tissue_counts = pd.crosstab(
+        df["Region"].fillna("Missing"),
+        df["GrayMatter"].fillna("Missing"),
+    )
+    for column in ["G", "W", "B", "Missing"]:
+        if column not in region_tissue_counts.columns:
+            region_tissue_counts[column] = 0
+
+    region_tissue_summary = (
+        region_tissue_counts[["G", "W", "B", "Missing"]]
+        .reset_index()
+        .rename(columns={"Region": "Region"})
+    )
+    region_tissue_summary["gw_total"] = region_tissue_summary["G"] + region_tissue_summary["W"]
+    region_tissue_summary["gray_pct_within_gw"] = (
+        region_tissue_summary["G"] / region_tissue_summary["gw_total"]
+    ).where(region_tissue_summary["gw_total"] > 0)
+    region_tissue_summary["white_pct_within_gw"] = (
+        region_tissue_summary["W"] / region_tissue_summary["gw_total"]
+    ).where(region_tissue_summary["gw_total"] > 0)
+    region_tissue_summary["dominant_gw_tissue"] = region_tissue_summary.apply(dominant_gw_tissue, axis=1)
+    region_tissue_summary = region_tissue_summary.sort_values(
+        ["gw_total", "G", "W"], ascending=[False, False, False], kind="stable"
+    ).reset_index(drop=True)
+    region_tissue_summary_export = region_tissue_summary.rename(
+        columns={
+            "G": "Gray Matter",
+            "W": "White Matter",
+            "gray_pct_within_gw": "gray_matter_pct_within_gw",
+            "white_pct_within_gw": "white_matter_pct_within_gw",
+        }
+    )
+    region_tissue_summary_export.to_csv(output_dir / "region_graywhite_summary.csv", index=False)
+
+    region_plot_df = (
+        region_tissue_summary.loc[region_tissue_summary["gw_total"] > 0, ["Region", "G", "W"]]
+        .head(15)
+        .set_index("Region")
+    )
+    region_plot_df = region_plot_df.rename(columns=TISSUE_LABELS)
+    save_horizontal_grouped_barplot(
+        region_plot_df,
+        title=f"{phase_title}: Top Regions By Gray Matter vs White Matter Counts",
+        xlabel="Row-level observation count",
+        filename="region_graywhite_top15.png",
+        colors=[TISSUE_COLORS["Gray Matter"], TISSUE_COLORS["White Matter"]],
+        output_dir=output_dir,
+    )
+
+    print(f"[{subset_label}] Completed outputs in {output_dir}")
+
+
+if __name__ == "__main__":
+    full_df, loaded_sources = load_input_frames()
+    print("Loaded sources:")
+    for src in loaded_sources:
+        print(f"  - {src}")
+    print(f"Total rows loaded: {len(full_df):,}")
+
+    phase_frames = build_phase_splits(full_df)
+    for phase_name in ["encoding", "retrieval", "combined"]:
+        run_summary_for_subset(phase_frames[phase_name], OUTPUT_DIR / phase_name, phase_name)
+
+    print(f"\nOutputs saved in: {OUTPUT_DIR}")

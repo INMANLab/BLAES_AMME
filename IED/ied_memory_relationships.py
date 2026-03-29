@@ -50,6 +50,13 @@ except ImportError:
     pearsonr = None
     spearmanr = None
 
+try:
+    from scipy.stats import f as f_dist
+    from scipy.stats import t as t_dist
+except ImportError:
+    f_dist = None
+    t_dist = None
+
 BASE_DIR = Path.cwd()
 BEHAVIOR_PATH = BASE_DIR / "AMMEBLAES_includedpts_firstsession_behavioral.csv"
 if not BEHAVIOR_PATH.exists():
@@ -100,6 +107,7 @@ def scatter_with_fit(
     ylabel: str,
     filename: str,
     color: str,
+    output_dir: Path,
 ) -> dict:
     subset = df[[x_col, y_col, "Patient"]].dropna().copy()
 
@@ -152,183 +160,426 @@ def scatter_with_fit(
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     fig.tight_layout()
-    fig.savefig(OUTPUT_DIR / filename, bbox_inches="tight")
+    fig.savefig(output_dir / filename, bbox_inches="tight")
     if running_in_notebook():
         plt.show()
     plt.close(fig)
     return stats
 
 
-# %% [markdown]
-# ## Load Behavioral And IED Summary Data
-
-# %%
-behavior_df = pd.read_csv(BEHAVIOR_PATH)
-ied_rate = pd.read_csv(IED_DIR / "patient_iedrateavg_summary.csv")
-ied_channel = pd.read_csv(IED_DIR / "patient_channelspread_summary.csv")
-ied_region = pd.read_csv(IED_DIR / "patient_regionspread_summary.csv")
-ied_trial = pd.read_csv(IED_DIR / "patient_trial_summary.csv")
-
-behavior_df["Patient"] = behavior_df["Patient"].astype("string").str.strip()
-behavior_df["avg_stim_dprime_diff"] = pd.to_numeric(behavior_df["avg_stim_dprime_diff"], errors="coerce")
-
-for frame in [ied_rate, ied_channel, ied_region, ied_trial]:
-    frame["Patient"] = frame["Patient"].astype("string").str.strip()
-
-print(f"Loaded behavioral rows: {len(behavior_df):,}")
-print(f"Loaded IED-rate rows: {len(ied_rate):,}")
-
-
-# %% [markdown]
-# ## Merge At The Patient Level
-
-# %%
-merged = (
-    behavior_df[
-        [
-            "Patient",
-            "Study",
-            "avg_stim_dprime_diff",
-            "IED_freq",
-            "IED_laterality",
-            "avg_stim",
-            "nostim",
-        ]
+def resolve_phase_dirs(summary_root: Path) -> dict[str, Path]:
+    phase_dirs = {
+        "encoding": summary_root / "encoding",
+        "retrieval": summary_root / "retrieval",
+        "combined": summary_root / "combined",
+    }
+    required = [
+        "patient_iedrateavg_summary.csv",
+        "patient_channelspread_summary.csv",
+        "patient_regionspread_summary.csv",
+        "patient_trial_summary.csv",
     ]
-    .merge(ied_rate[["Patient", "IEDRateAvg", "trials_with_weighted_iedrate"]], on="Patient", how="inner")
-    .merge(ied_channel[["Patient", "PatientChannelSpread"]], on="Patient", how="left")
-    .merge(ied_region[["Patient", "PatientRegionSpread"]], on="Patient", how="left")
-    .merge(ied_trial[["Patient", "unique_ied_trials"]], on="Patient", how="left")
-)
-
-merged.to_csv(OUTPUT_DIR / "memory_vs_ied_merged.csv", index=False)
-
-print(f"Merged patient count: {len(merged):,}")
-display(merged.head(12))
+    has_phase_layout = all((phase_dirs["combined"] / req).exists() for req in required)
+    if has_phase_layout:
+        return phase_dirs
+    return {"combined": summary_root}
 
 
-# %% [markdown]
-# ## Relationship Measures
-
-# %%
-memory_measure = "avg_stim_dprime_diff"
-ied_measures = {
-    "IEDRateAvg": {
-        "title": "Memory vs IEDRateAvg",
-        "xlabel": "IEDRateAvg (average of trial-level WeightedIEDRate)",
-        "color": "#C97C10",
-        "filename": "memory_vs_IEDRateAvg.png",
-    },
-    "PatientChannelSpread": {
-        "title": "Memory vs PatientChannelSpread",
-        "xlabel": "PatientChannelSpread",
-        "color": "#2A6F97",
-        "filename": "memory_vs_PatientChannelSpread.png",
-    },
-    "PatientRegionSpread": {
-        "title": "Memory vs PatientRegionSpread",
-        "xlabel": "PatientRegionSpread",
-        "color": "#7F5539",
-        "filename": "memory_vs_PatientRegionSpread.png",
-    },
-    "unique_ied_trials": {
-        "title": "Memory vs Unique IED-Positive Trials",
-        "xlabel": "Unique IED-positive trials",
-        "color": "#5B8E7D",
-        "filename": "memory_vs_unique_ied_trials.png",
-    },
-}
+def available_timing_pct_columns(df: pd.DataFrame) -> list[str]:
+    preferred = [
+        "during_img_trials_pct",
+        "during_stim_trials_pct",
+        "before_img_iti_trials_pct",
+        "after_img_iti_trials_pct",
+    ]
+    return [col for col in preferred if col in df.columns]
 
 
-# %% [markdown]
-# ## Scatter Plots And Correlations
+def timing_label(col: str) -> str:
+    mapping = {
+        "during_img_trials_pct": "During Image",
+        "during_stim_trials_pct": "During Stimulation",
+        "before_img_iti_trials_pct": "Before Image ITI",
+        "after_img_iti_trials_pct": "After Image ITI",
+    }
+    return mapping.get(col, col)
 
-# %%
-correlation_rows = []
-for measure, meta in ied_measures.items():
-    stats = scatter_with_fit(
-        merged,
-        x_col=measure,
-        y_col=memory_measure,
-        title=meta["title"],
-        xlabel=meta["xlabel"],
-        ylabel="avg_stim_dprime_diff",
-        filename=meta["filename"],
-        color=meta["color"],
+
+def zscore_series(s: pd.Series) -> pd.Series:
+    std = s.std(ddof=0)
+    if pd.isna(std) or np.isclose(std, 0):
+        return pd.Series(np.nan, index=s.index)
+    return (s - s.mean()) / std
+
+
+def run_timing_relationships(
+    merged_df: pd.DataFrame,
+    timing_cols: list[str],
+    phase_name: str,
+    output_dir: Path,
+    memory_measure: str,
+) -> None:
+    if not timing_cols:
+        return
+
+    timing_palette = {
+        "during_img_trials_pct": "#2E8B57",
+        "during_stim_trials_pct": "#D1495B",
+        "before_img_iti_trials_pct": "#4C78A8",
+        "after_img_iti_trials_pct": "#8E6C8A",
+    }
+
+    timing_rows = []
+    for t_col in timing_cols:
+        lbl = timing_label(t_col)
+        stats = scatter_with_fit(
+            merged_df,
+            x_col=t_col,
+            y_col=memory_measure,
+            title=f"{phase_name.title()}: Memory vs {lbl} IED Timing",
+            xlabel=f"{lbl} (% of unique IED-positive trials)",
+            ylabel=memory_measure,
+            filename=f"memory_vs_{t_col}.png",
+            color=timing_palette.get(t_col, "#555555"),
+            output_dir=output_dir,
+        )
+        stats["timing_label"] = lbl
+        timing_rows.append(stats)
+
+    timing_corr = pd.DataFrame(timing_rows)
+    timing_corr.to_csv(output_dir / "memory_timing_correlation_summary.csv", index=False)
+
+    n_cols = 2
+    n_rows = int(np.ceil(len(timing_cols) / n_cols))
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(12, 5 * n_rows))
+    axes = np.array(axes).reshape(-1)
+
+    for idx, t_col in enumerate(timing_cols):
+        ax = axes[idx]
+        subset = merged_df[[t_col, memory_measure]].dropna()
+        ax.scatter(
+            subset[t_col],
+            subset[memory_measure],
+            color=timing_palette.get(t_col, "#555555"),
+            edgecolor="black",
+            linewidth=0.7,
+            alpha=0.9,
+            s=50,
+        )
+        if len(subset) >= 2:
+            fit = np.polyfit(subset[t_col], subset[memory_measure], 1)
+            x_line = np.linspace(subset[t_col].min(), subset[t_col].max(), 100)
+            y_line = fit[0] * x_line + fit[1]
+            ax.plot(x_line, y_line, color="black", linewidth=1.1)
+
+        row = timing_corr.loc[timing_corr["x_measure"] == t_col].iloc[0]
+        ax.set_title(timing_label(t_col))
+        ax.set_xlabel("Proportion of unique IED-positive trials")
+        ax.set_ylabel(memory_measure)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        p_text = "nan" if pd.isna(row["pearson_p"]) else f"{row['pearson_p']:.3f}"
+        s_text = "nan" if pd.isna(row["spearman_p"]) else f"{row['spearman_p']:.3f}"
+        ax.text(
+            0.03,
+            0.97,
+            (
+                f"n = {int(row['n'])}\n"
+                f"Pearson r = {row['pearson_r']:.2f}, p = {p_text}\n"
+                f"Spearman rho = {row['spearman_rho']:.2f}, p = {s_text}"
+            ),
+            transform=ax.transAxes,
+            va="top",
+            ha="left",
+            fontsize=8.5,
+            bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.75},
+        )
+
+    for j in range(len(timing_cols), len(axes)):
+        axes[j].axis("off")
+
+    fig.suptitle(
+        f"{phase_name.title()}: IED Timing Correlations with {memory_measure}",
+        y=1.01,
+        fontsize=16,
     )
-    correlation_rows.append(stats)
+    fig.tight_layout()
+    fig.savefig(output_dir / "memory_vs_ied_timing_combined.png", bbox_inches="tight")
+    if running_in_notebook():
+        plt.show()
+    plt.close(fig)
 
-correlation_summary = pd.DataFrame(correlation_rows)
-correlation_summary.to_csv(OUTPUT_DIR / "memory_ied_correlation_summary.csv", index=False)
-display(correlation_summary)
+    # Compare timing impacts with a multiple linear model using standardized variables.
+    model_cols = [memory_measure] + timing_cols
+    model_df = merged_df[model_cols].dropna().copy()
+    if model_df.empty:
+        return
+    usable_cols = [col for col in timing_cols if model_df[col].nunique(dropna=True) > 1]
+    if len(usable_cols) < 2 or len(model_df) <= len(usable_cols) + 1:
+        return
 
+    xz = np.column_stack([zscore_series(model_df[col]).to_numpy(dtype=np.float64) for col in usable_cols])
+    yz = zscore_series(model_df[memory_measure]).to_numpy(dtype=np.float64)
 
-# %% [markdown]
-# ## Combined Overview Figure
+    finite_mask = np.isfinite(yz)
+    finite_mask &= np.all(np.isfinite(xz), axis=1)
+    xz = xz[finite_mask]
+    yz = yz[finite_mask]
 
-# %%
-fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-axes = axes.ravel()
+    n = xz.shape[0]
+    k = xz.shape[1]
+    if n <= k + 1:
+        return
 
-for ax, (measure, meta) in zip(axes, ied_measures.items()):
-    subset = merged[[measure, memory_measure]].dropna()
-    ax.scatter(
-        subset[measure],
-        subset[memory_measure],
-        color=meta["color"],
-        edgecolor="black",
-        linewidth=0.7,
-        alpha=0.9,
-        s=50,
+    x_design = np.column_stack([np.ones(n), xz])
+    xtx_inv = np.linalg.pinv(x_design.T @ x_design)
+    beta = xtx_inv @ x_design.T @ yz
+    y_hat = x_design @ beta
+    resid = yz - y_hat
+
+    sse = float(np.sum(resid**2))
+    sst = float(np.sum((yz - yz.mean()) ** 2))
+    ssr = sst - sse
+    r2 = np.nan if np.isclose(sst, 0) else 1 - (sse / sst)
+    adj_r2 = np.nan if n <= k + 1 else 1 - (1 - r2) * ((n - 1) / (n - k - 1))
+
+    mse = sse / (n - k - 1)
+    se_beta = np.sqrt(np.diag(xtx_inv) * mse)
+    t_vals = beta / se_beta
+
+    model_f = (ssr / k) / (sse / (n - k - 1)) if k > 0 and not np.isclose(sse, 0) else np.nan
+    model_p = np.nan
+    if f_dist is not None and not np.isnan(model_f):
+        model_p = float(f_dist.sf(model_f, k, n - k - 1))
+
+    coef_rows = []
+    predictors = ["Intercept"] + usable_cols
+    for i, name in enumerate(predictors):
+        p_val = np.nan
+        if t_dist is not None and n - k - 1 > 0 and np.isfinite(t_vals[i]):
+            p_val = float(2 * t_dist.sf(np.abs(t_vals[i]), n - k - 1))
+        coef_rows.append(
+            {
+                "term": name,
+                "timing_label": timing_label(name) if name != "Intercept" else "Intercept",
+                "beta": beta[i],
+                "std_error": se_beta[i],
+                "t": t_vals[i],
+                "p": p_val,
+            }
+        )
+
+    coef_df = pd.DataFrame(coef_rows)
+    coef_df.to_csv(output_dir / "timing_impact_regression_coefficients.csv", index=False)
+
+    model_summary = pd.DataFrame(
+        [
+            {
+                "n": n,
+                "predictors": k,
+                "r_squared": r2,
+                "adj_r_squared": adj_r2,
+                "model_f": model_f,
+                "model_p": model_p,
+            }
+        ]
     )
-    if len(subset) >= 2:
-        fit = np.polyfit(subset[measure], subset[memory_measure], 1)
-        x_line = np.linspace(subset[measure].min(), subset[measure].max(), 100)
-        y_line = fit[0] * x_line + fit[1]
-        ax.plot(x_line, y_line, color="black", linewidth=1.1)
+    model_summary.to_csv(output_dir / "timing_impact_regression_model_summary.csv", index=False)
 
-    stats_row = correlation_summary.loc[correlation_summary["x_measure"] == measure].iloc[0]
-    ax.set_title(meta["title"])
-    ax.set_xlabel(meta["xlabel"])
-    ax.set_ylabel("avg_stim_dprime_diff")
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.text(
-        0.03,
-        0.97,
-        (
-            f"n = {int(stats_row['n'])}\n"
-            f"Pearson r = {stats_row['pearson_r']:.2f}, p = {stats_row['pearson_p']:.3f}\n"
-            f"Spearman rho = {stats_row['spearman_rho']:.2f}, p = {stats_row['spearman_p']:.3f}"
-        ),
-        transform=ax.transAxes,
-        va="top",
-        ha="left",
-        fontsize=8.5,
-        bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.75},
+    coef_plot_df = coef_df[coef_df["term"] != "Intercept"].copy()
+    if not coef_plot_df.empty:
+        coef_plot_df["ci95"] = 1.96 * coef_plot_df["std_error"]
+        coef_plot_df = coef_plot_df.sort_values("beta", ascending=False)
+
+        fig, ax = plt.subplots(figsize=(8, 5.5))
+        ax.bar(
+            coef_plot_df["timing_label"],
+            coef_plot_df["beta"],
+            yerr=coef_plot_df["ci95"],
+            color=[timing_palette.get(term, "#777777") for term in coef_plot_df["term"]],
+            edgecolor="black",
+            linewidth=1.0,
+            capsize=4,
+        )
+        ax.axhline(0, color="black", linewidth=1)
+        ax.set_ylabel("Standardized beta (95% CI)")
+        ax.set_title(f"{phase_name.title()}: Relative Timing Impact on {memory_measure}")
+        ax.tick_params(axis="x", rotation=20)
+        fig.tight_layout()
+        fig.savefig(output_dir / "timing_impact_regression_betas.png", bbox_inches="tight")
+        if running_in_notebook():
+            plt.show()
+        plt.close(fig)
+
+
+def run_phase_relationships(phase_name: str, summary_dir: Path, output_root: Path, behavior_df: pd.DataFrame) -> bool:
+    required_files = {
+        "ied_rate": summary_dir / "patient_iedrateavg_summary.csv",
+        "ied_channel": summary_dir / "patient_channelspread_summary.csv",
+        "ied_region": summary_dir / "patient_regionspread_summary.csv",
+        "ied_trial": summary_dir / "patient_trial_summary.csv",
+    }
+    missing = [str(path) for path in required_files.values() if not path.exists()]
+    if missing:
+        print(f"[{phase_name}] Skipping: missing summary inputs.")
+        for path in missing:
+            print(f"  - {path}")
+        return False
+
+    phase_output_dir = output_root / phase_name
+    phase_output_dir.mkdir(parents=True, exist_ok=True)
+
+    ied_rate = pd.read_csv(required_files["ied_rate"])
+    ied_channel = pd.read_csv(required_files["ied_channel"])
+    ied_region = pd.read_csv(required_files["ied_region"])
+    ied_trial = pd.read_csv(required_files["ied_trial"])
+
+    for frame in [ied_rate, ied_channel, ied_region, ied_trial]:
+        frame["Patient"] = frame["Patient"].astype("string").str.strip()
+
+    timing_cols = available_timing_pct_columns(ied_trial)
+
+    merged = (
+        behavior_df[
+            [
+                "Patient",
+                "Study",
+                "avg_stim_dprime_diff",
+                "IED_freq",
+                "IED_laterality",
+                "avg_stim",
+                "nostim",
+            ]
+        ]
+        .merge(ied_rate[["Patient", "IEDRateAvg", "trials_with_weighted_iedrate"]], on="Patient", how="inner")
+        .merge(ied_channel[["Patient", "PatientChannelSpread"]], on="Patient", how="left")
+        .merge(ied_region[["Patient", "PatientRegionSpread"]], on="Patient", how="left")
+        .merge(ied_trial[["Patient", "unique_ied_trials"] + timing_cols], on="Patient", how="left")
+    )
+    merged.to_csv(phase_output_dir / "memory_vs_ied_merged.csv", index=False)
+
+    memory_measure = "avg_stim_dprime_diff"
+    ied_measures = {
+        "IEDRateAvg": {
+            "title": f"{phase_name.title()}: Memory vs IEDRateAvg",
+            "xlabel": "IEDRateAvg (average of trial-level WeightedIEDRate)",
+            "color": "#C97C10",
+            "filename": "memory_vs_IEDRateAvg.png",
+        },
+        "PatientChannelSpread": {
+            "title": f"{phase_name.title()}: Memory vs PatientChannelSpread",
+            "xlabel": "PatientChannelSpread",
+            "color": "#2A6F97",
+            "filename": "memory_vs_PatientChannelSpread.png",
+        },
+        "PatientRegionSpread": {
+            "title": f"{phase_name.title()}: Memory vs PatientRegionSpread",
+            "xlabel": "PatientRegionSpread",
+            "color": "#7F5539",
+            "filename": "memory_vs_PatientRegionSpread.png",
+        },
+        "unique_ied_trials": {
+            "title": f"{phase_name.title()}: Memory vs Unique IED-Positive Trials",
+            "xlabel": "Unique IED-positive trials",
+            "color": "#5B8E7D",
+            "filename": "memory_vs_unique_ied_trials.png",
+        },
+    }
+
+    correlation_rows = []
+    for measure, meta in ied_measures.items():
+        stats = scatter_with_fit(
+            merged,
+            x_col=measure,
+            y_col=memory_measure,
+            title=meta["title"],
+            xlabel=meta["xlabel"],
+            ylabel="avg_stim_dprime_diff",
+            filename=meta["filename"],
+            color=meta["color"],
+            output_dir=phase_output_dir,
+        )
+        correlation_rows.append(stats)
+
+    correlation_summary = pd.DataFrame(correlation_rows)
+    correlation_summary.to_csv(phase_output_dir / "memory_ied_correlation_summary.csv", index=False)
+
+    run_timing_relationships(
+        merged_df=merged,
+        timing_cols=timing_cols,
+        phase_name=phase_name,
+        output_dir=phase_output_dir,
+        memory_measure=memory_measure,
     )
 
-fig.suptitle("Patient-Level IED Measures vs avg_stim_dprime_diff", y=1.02, fontsize=16)
-fig.tight_layout()
-fig.savefig(OUTPUT_DIR / "memory_vs_ied_combined.png", bbox_inches="tight")
-if running_in_notebook():
-    plt.show()
-plt.close(fig)
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    axes = axes.ravel()
+    for ax, (measure, meta) in zip(axes, ied_measures.items()):
+        subset = merged[[measure, memory_measure]].dropna()
+        ax.scatter(
+            subset[measure],
+            subset[memory_measure],
+            color=meta["color"],
+            edgecolor="black",
+            linewidth=0.7,
+            alpha=0.9,
+            s=50,
+        )
+        if len(subset) >= 2:
+            fit = np.polyfit(subset[measure], subset[memory_measure], 1)
+            x_line = np.linspace(subset[measure].min(), subset[measure].max(), 100)
+            y_line = fit[0] * x_line + fit[1]
+            ax.plot(x_line, y_line, color="black", linewidth=1.1)
+
+        stats_row = correlation_summary.loc[correlation_summary["x_measure"] == measure].iloc[0]
+        ax.set_title(meta["title"])
+        ax.set_xlabel(meta["xlabel"])
+        ax.set_ylabel("avg_stim_dprime_diff")
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.text(
+            0.03,
+            0.97,
+            (
+                f"n = {int(stats_row['n'])}\n"
+                f"Pearson r = {stats_row['pearson_r']:.2f}, p = {stats_row['pearson_p']:.3f}\n"
+                f"Spearman rho = {stats_row['spearman_rho']:.2f}, p = {stats_row['spearman_p']:.3f}"
+            ),
+            transform=ax.transAxes,
+            va="top",
+            ha="left",
+            fontsize=8.5,
+            bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.75},
+        )
+
+    fig.suptitle(f"{phase_name.title()}: Patient-Level IED Measures vs avg_stim_dprime_diff", y=1.02, fontsize=16)
+    fig.tight_layout()
+    fig.savefig(phase_output_dir / "memory_vs_ied_combined.png", bbox_inches="tight")
+    if running_in_notebook():
+        plt.show()
+    plt.close(fig)
+
+    print(f"[{phase_name}] Merged patients: {len(merged)}")
+    return True
 
 
-# %% [markdown]
-# ## Summary
+if __name__ == "__main__":
+    behavior_df = pd.read_csv(BEHAVIOR_PATH)
+    behavior_df["Patient"] = behavior_df["Patient"].astype("string").str.strip()
+    behavior_df["avg_stim_dprime_diff"] = pd.to_numeric(behavior_df["avg_stim_dprime_diff"], errors="coerce")
 
-# %%
-print("Behavioral memory column used: avg_stim_dprime_diff")
-print(f"Merged patients: {len(merged)}")
+    phase_dirs = resolve_phase_dirs(IED_DIR)
+    ran_any = False
+    for phase_name in ["encoding", "retrieval", "combined"]:
+        if phase_name not in phase_dirs:
+            continue
+        ran_any = run_phase_relationships(
+            phase_name=phase_name,
+            summary_dir=phase_dirs[phase_name],
+            output_root=OUTPUT_DIR,
+            behavior_df=behavior_df,
+        ) or ran_any
 
-for _, row in correlation_summary.iterrows():
-    print(
-        f"{row['x_measure']}: "
-        f"Pearson r = {row['pearson_r']:.3f} (p = {row['pearson_p']:.3f}), "
-        f"Spearman rho = {row['spearman_rho']:.3f} (p = {row['spearman_p']:.3f}), "
-        f"n = {int(row['n'])}"
-    )
-
-print(f"\nOutputs saved in: {OUTPUT_DIR}")
+    if not ran_any:
+        print("No phase outputs were generated; required summary CSVs were not found.")
+    print(f"Outputs saved in: {OUTPUT_DIR}")
