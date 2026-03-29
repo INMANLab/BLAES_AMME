@@ -61,6 +61,13 @@ BLA_ALLHPC = 'BLA_ALLHPC'
 BLA_MTL = 'BLA_MTL'
 COMPOSITE_ROIS = [BLA_ALLHPC, BLA_MTL]
 ALLHPC_PARTNERS = {'CA', 'DG', 'HPC'}
+ALLHPC_EC = 'ALLHPC_EC'
+ALLHPC_PRC = 'ALLHPC_PRC'
+ALLHPC_PAIR_COMPOSITE_ROIS = [ALLHPC_EC, ALLHPC_PRC]
+ALLHPC_PAIR_SOURCES = {
+    ALLHPC_EC: {'CA_EC', 'DG_EC', 'EC_HPC'},
+    ALLHPC_PRC: {'CA_PRC', 'DG_PRC', 'HPC_PRC'},
+}
 COMPOSITE_LOGIC_TEXT = (
     'Composite logic: average trial-level coherency within each original BLA pair for each '
     'patient and condition, then average those spectra across available source pairs '
@@ -71,6 +78,7 @@ COMPOSITE_LOGIC_TEXT = (
 CONNECTED_DOT_ROI_ORDER = [
     'BLA_CA', 'BLA_DG', 'BLA_EC', 'BLA_HPC', 'BLA_PRC', 'CA_DG', 'CA_EC',
     'CA_PRC', 'DG_EC', 'DG_PRC', 'EC_HPC', 'EC_PRC', 'HPC_PRC',
+    ALLHPC_EC, ALLHPC_PRC,
 ]
 
 AMME_RETRIEVAL_REGION_EXCLUSIONS = {
@@ -169,6 +177,29 @@ def build_bla_composite_region_dict(region_dict, excluded_substrings=None):
             collapsed.setdefault(composite_roi, {})[subject] = np.nanmean(np.vstack(vecs), axis=0)
     return collapsed
 
+def build_allhpc_pair_composite_region_dict(region_dict, excluded_substrings=None):
+    composites = {roi: {} for roi in ALLHPC_PAIR_COMPOSITE_ROIS}
+    for roi, subj_dict in (region_dict or {}).items():
+        roi = normalize_region_label(roi)
+        if (
+            roi in COMPOSITE_ROIS
+            or roi in ALLHPC_PAIR_COMPOSITE_ROIS
+            or roi_has_excluded_substring(roi, excluded_substrings)
+        ):
+            continue
+        for composite_roi, source_rois in ALLHPC_PAIR_SOURCES.items():
+            if roi not in source_rois:
+                continue
+            for subject, values in subj_dict.items():
+                arr = np.asarray(values, dtype=np.float64)
+                composites[composite_roi].setdefault(subject, []).append(arr)
+
+    collapsed = {}
+    for composite_roi, subj_dict in composites.items():
+        for subject, vecs in subj_dict.items():
+            collapsed.setdefault(composite_roi, {})[subject] = np.nanmean(np.vstack(vecs), axis=0)
+    return collapsed
+
 def build_bla_composite_data(data):
     composite_data = {
         'freqs_post': data.get('freqs_post'),
@@ -206,6 +237,42 @@ def build_bla_composite_data(data):
         composite_data[key] = build_bla_composite_region_dict(data.get(key, {}), excluded_substrings)
 
     return composite_data
+
+def augment_with_allhpc_pair_composites(data):
+    pair_composites = {}
+    post_key_exclusions = {
+        'group_all_power': data.get('overall_plot_exclude_substrings', set()),
+        'stim_power': data.get('stim_plot_exclude_substrings', set()),
+        'nostim_power': data.get('stim_plot_exclude_substrings', set()),
+        'stim_rem': data.get('memory_plot_exclude_substrings', set()),
+        'stim_forg': data.get('memory_plot_exclude_substrings', set()),
+        'nostim_rem': data.get('memory_plot_exclude_substrings', set()),
+        'nostim_forg': data.get('memory_plot_exclude_substrings', set()),
+    }
+    diff_key_exclusions = {
+        'bc_stim': data.get('bc_plot_exclude_substrings', set()),
+        'bc_nostim': data.get('bc_plot_exclude_substrings', set()),
+        'bc_stim_rem': data.get('bc_plot_exclude_substrings', set()),
+        'bc_stim_forg': data.get('bc_plot_exclude_substrings', set()),
+        'bc_nostim_rem': data.get('bc_plot_exclude_substrings', set()),
+        'bc_nostim_forg': data.get('bc_plot_exclude_substrings', set()),
+    }
+    for key, excluded_substrings in {**post_key_exclusions, **diff_key_exclusions}.items():
+        pair_composites[key] = build_allhpc_pair_composite_region_dict(data.get(key, {}), excluded_substrings)
+
+    augmented = data.copy()
+    for key, value in data.items():
+        if isinstance(value, dict) and (not value or all(isinstance(subvalue, dict) for subvalue in value.values())):
+            augmented[key] = merge_dicts(value, pair_composites.get(key, {}))
+        elif isinstance(value, np.ndarray):
+            augmented[key] = np.asarray(value, dtype=np.float64).copy()
+        elif isinstance(value, list):
+            augmented[key] = [frame.copy() if isinstance(frame, pd.DataFrame) else frame for frame in value]
+        elif isinstance(value, set):
+            augmented[key] = set(value)
+        else:
+            augmented[key] = value
+    return canonicalize_coherence_data(augmented)
 
 def apply_subject_region_exclusions(df, exclude_map):
     if not exclude_map or 'Patient' not in df.columns or 'Region' not in df.columns:
@@ -443,20 +510,21 @@ def compute_condition_band_df(stim_d, nostim_d, freqs, ranges, excluded_substrin
                 })
     return pd.DataFrame(rows)
 
-def plot_grouped_condition_bars(df, out_dir, label, phase_label, filename_template, title_suffix):
+def plot_grouped_condition_bars(df, out_dir, label, phase_label, filename_template, title_suffix, show_patients=True):
     if df.empty:
         return
     band_order = [band for band in POWER_RANGES if band in df['power_range'].unique()]
     if not band_order:
         band_order = sorted(df['power_range'].unique())
-    patients = sorted(df['Patient'].unique())
-    filled_markers = ['o', 's', '^', 'D', 'v', 'P', 'X', '*', '<', '>', 'h', '8', 'p', 'H', 'd']
-    marker_styles = ([(m, True) for m in filled_markers] +
-                     [(m, False) for m in filled_markers] +
-                     [('1', True), ('2', True), ('3', True), ('4', True),
-                      ('+', True), ('x', True), ('|', True), ('_', True)] +
-                     [(f'${i}$', True) for i in range(1, 11)])
-    patient_markers = {p: marker_styles[i] for i, p in enumerate(patients)}
+    if show_patients:
+        patients = sorted(df['Patient'].unique())
+        filled_markers = ['o', 's', '^', 'D', 'v', 'P', 'X', '*', '<', '>', 'h', '8', 'p', 'H', 'd']
+        marker_styles = ([(m, True) for m in filled_markers] +
+                         [(m, False) for m in filled_markers] +
+                         [('1', True), ('2', True), ('3', True), ('4', True),
+                          ('+', True), ('x', True), ('|', True), ('_', True)] +
+                         [(f'${i}$', True) for i in range(1, 11)])
+        patient_markers = {p: marker_styles[i] for i, p in enumerate(patients)}
     bar_colors = {'nostim': '#1f77b4', 'stim': '#d62728'}
 
     for band in band_order:
@@ -494,39 +562,40 @@ def plot_grouped_condition_bars(df, out_dir, label, phase_label, filename_templa
                     zorder=1,
                 )
 
-        for i, roi in enumerate(roi_order):
-            roi_df = df_band[df_band['Region'] == roi]
-            for _, row in roi_df.iterrows():
-                x_ns = x_base[i] + offsets['nostim']
-                x_s = x_base[i] + offsets['stim']
-                ax.plot([x_ns, x_s], [row['nostim'], row['stim']], color='black', alpha=0.35, linewidth=1)
-                marker, filled = patient_markers[row['Patient']]
-                if filled:
-                    ax.scatter(x_ns, row['nostim'], marker=marker, color='black', alpha=0.65, s=55, zorder=3)
-                    ax.scatter(x_s, row['stim'], marker=marker, color='black', alpha=0.95, s=55, zorder=3)
-                else:
-                    ax.scatter(
-                        x_ns,
-                        row['nostim'],
-                        marker=marker,
-                        facecolors='white',
-                        edgecolors='black',
-                        linewidths=1.1,
-                        alpha=0.85,
-                        s=60,
-                        zorder=3,
-                    )
-                    ax.scatter(
-                        x_s,
-                        row['stim'],
-                        marker=marker,
-                        facecolors='white',
-                        edgecolors='black',
-                        linewidths=1.3,
-                        alpha=1.0,
-                        s=60,
-                        zorder=3,
-                    )
+        if show_patients:
+            for i, roi in enumerate(roi_order):
+                roi_df = df_band[df_band['Region'] == roi]
+                for _, row in roi_df.iterrows():
+                    x_ns = x_base[i] + offsets['nostim']
+                    x_s = x_base[i] + offsets['stim']
+                    ax.plot([x_ns, x_s], [row['nostim'], row['stim']], color='black', alpha=0.35, linewidth=1)
+                    marker, filled = patient_markers[row['Patient']]
+                    if filled:
+                        ax.scatter(x_ns, row['nostim'], marker=marker, color='black', alpha=0.65, s=55, zorder=3)
+                        ax.scatter(x_s, row['stim'], marker=marker, color='black', alpha=0.95, s=55, zorder=3)
+                    else:
+                        ax.scatter(
+                            x_ns,
+                            row['nostim'],
+                            marker=marker,
+                            facecolors='white',
+                            edgecolors='black',
+                            linewidths=1.1,
+                            alpha=0.85,
+                            s=60,
+                            zorder=3,
+                        )
+                        ax.scatter(
+                            x_s,
+                            row['stim'],
+                            marker=marker,
+                            facecolors='white',
+                            edgecolors='black',
+                            linewidths=1.3,
+                            alpha=1.0,
+                            s=60,
+                            zorder=3,
+                        )
 
         ax.set_xticks(x_base)
         ax.set_xticklabels(roi_order, fontsize=14, fontweight='bold')
@@ -554,16 +623,16 @@ def plot_grouped_condition_bars(df, out_dir, label, phase_label, filename_templa
         fig.legend(handles=stim_legend, loc='upper center', bbox_to_anchor=(0.50, 0.925),
                    ncol=2, frameon=False, fontsize=12, title='Condition', title_fontsize=13,
                    handlelength=1.8, handletextpad=0.6, columnspacing=1.2, borderaxespad=0.2)
-
-        patient_handles = [
-            Line2D([0], [0], marker=patient_markers[p][0], color='black', linestyle='None',
-                   markerfacecolor='black' if patient_markers[p][1] else 'white',
-                   markeredgecolor='black', markeredgewidth=1.1, markersize=8, label=str(p))
-            for p in sorted(df_band['Patient'].unique())
-        ]
-        fig.legend(handles=patient_handles, loc='center left', bbox_to_anchor=(0.82, 0.50),
-                   ncol=2, columnspacing=0.9, handletextpad=0.4, labelspacing=0.45,
-                   frameon=False, fontsize=10, title='Patient', title_fontsize=12)
+        if show_patients:
+            patient_handles = [
+                Line2D([0], [0], marker=patient_markers[p][0], color='black', linestyle='None',
+                       markerfacecolor='black' if patient_markers[p][1] else 'white',
+                       markeredgecolor='black', markeredgewidth=1.1, markersize=8, label=str(p))
+                for p in sorted(df_band['Patient'].unique())
+            ]
+            fig.legend(handles=patient_handles, loc='center left', bbox_to_anchor=(0.82, 0.50),
+                       ncol=2, columnspacing=0.9, handletextpad=0.4, labelspacing=0.45,
+                       frameon=False, fontsize=10, title='Patient', title_fontsize=12)
         fig.text(
             0.015,
             0.015,
@@ -573,7 +642,7 @@ def plot_grouped_condition_bars(df, out_dir, label, phase_label, filename_templa
             fontsize=9,
             wrap=True,
         )
-        fig.subplots_adjust(left=0.08, right=0.80, bottom=0.12, top=0.86)
+        fig.subplots_adjust(left=0.08, right=0.95 if not show_patients else 0.80, bottom=0.12, top=0.86)
         plt.savefig(os.path.join(out_dir, band_filename(filename_template, band)), bbox_inches='tight', dpi=300)
         finalize_figure(fig)
 
@@ -873,11 +942,11 @@ def load_amme_retrieval():
         'freqs_post': None, 'freqs_diff': None,
         'has_memory': True,
         'use_memory_collapsed_overall': True,
-        'overall_plot_exclude_substrings': {'PNAS', 'PHG'},
-        'stim_plot_exclude_substrings': {'PNAS', 'PHG'},
-        'memory_plot_exclude_substrings': {'PNAS', 'PHG'},
-        'bc_plot_exclude_substrings': {'PNAS', 'PHG'},
-        'has_bc_quadrant_plot': False,
+        'overall_plot_exclude_substrings': {'PNAS'},
+        'stim_plot_exclude_substrings': {'PNAS'},
+        'memory_plot_exclude_substrings': {'PNAS'},
+        'bc_plot_exclude_substrings': {'PNAS'},
+        'has_bc_quadrant_plot': True,
         'has_connected_dots_plot': True,
         'stim_rem': {}, 'stim_forg': {},
         'nostim_rem': {}, 'nostim_forg': {},
@@ -1167,6 +1236,15 @@ def plot_bc_bar_graph(data, out_dir, label):
         'StimVsNoStim_alltrials_retrieval.png',
         'All Trials',
     )
+    plot_grouped_condition_bars(
+        df_condition,
+        out_dir,
+        label,
+        'Retrieval',
+        'StimVsNoStim_alltrials_retrieval_clean.png',
+        'All Trials',
+        show_patients=False,
+    )
 
 
 def plot_bc_per_roi(data, out_dir, label):
@@ -1434,6 +1512,15 @@ def plot_bc_bar_by_memory(data, out_dir, label):
             f'StimVsNoStim_{mem}_retrieval.png',
             f'{mem_label} Trials',
         )
+        plot_grouped_condition_bars(
+            df_condition,
+            out_dir,
+            label,
+            'Retrieval',
+            f'StimVsNoStim_{mem}_retrieval_clean.png',
+            f'{mem_label} Trials',
+            show_patients=False,
+        )
 
 
 def plot_bc_remembered_forgotten(data, out_dir, label):
@@ -1477,11 +1564,12 @@ def plot_bc_remembered_forgotten(data, out_dir, label):
         finalize_figure()
 
 
-def plot_connected_dots(data, out_dir, label):
+def plot_connected_dots(data, out_dir, label, show_patients=True):
     """Connected dots plot showing stim vs nostim differences per patient."""
     freqs = data['freqs_diff']
     if freqs is None:
         return
+    clean_suffix = '_clean' if not show_patients else ''
     mem_pairs = [
         ('remembered', data.get('bc_stim_rem', {}), data.get('bc_nostim_rem', {})),
         ('forgotten', data.get('bc_stim_forg', {}), data.get('bc_nostim_forg', {})),
@@ -1507,14 +1595,15 @@ def plot_connected_dots(data, out_dir, label):
 
     df = pd.DataFrame(all_rows)
     band_order = list(POWER_RANGES.keys())
-    patients = sorted(df['Patient'].unique())
-    filled_markers = ['o', 's', '^', 'D', 'v', 'P', 'X', '*', '<', '>', 'h', '8', 'p', 'H', 'd']
-    marker_styles = ([(m, True) for m in filled_markers] +
-                     [(m, False) for m in filled_markers] +
-                     [('1', True), ('2', True), ('3', True), ('4', True),
-                      ('+', True), ('x', True), ('|', True), ('_', True)] +
-                     [(f'${i}$', True) for i in range(1, 11)])
-    patient_markers = {p: marker_styles[i] for i, p in enumerate(patients)}
+    if show_patients:
+        patients = sorted(df['Patient'].unique())
+        filled_markers = ['o', 's', '^', 'D', 'v', 'P', 'X', '*', '<', '>', 'h', '8', 'p', 'H', 'd']
+        marker_styles = ([(m, True) for m in filled_markers] +
+                         [(m, False) for m in filled_markers] +
+                         [('1', True), ('2', True), ('3', True), ('4', True),
+                          ('+', True), ('x', True), ('|', True), ('_', True)] +
+                         [(f'${i}$', True) for i in range(1, 11)])
+        patient_markers = {p: marker_styles[i] for i, p in enumerate(patients)}
 
     for mem, mem_label in [('remembered', 'Remembered'), ('forgotten', 'Forgotten')]:
         df_mem = df[df['memory_cond'] == mem]
@@ -1549,22 +1638,23 @@ def plot_connected_dots(data, out_dir, label):
                            color=bar_colors[trial],
                            edgecolor='black', linewidth=1.2, yerr=sem, capsize=4, zorder=1)
 
-            for i, roi in enumerate(roi_order):
-                roi_df = df_band[df_band['Region'] == roi]
-                for _, row in roi_df.iterrows():
-                    x_ns = x_base[i] + offsets['nostim']
-                    x_s = x_base[i] + offsets['stim']
-                    ax.plot([x_ns, x_s], [row['nostim'], row['stim']],
-                            color='black', alpha=0.35, linewidth=1)
-                    m, filled = patient_markers[row['Patient']]
-                    if filled:
-                        ax.scatter(x_ns, row['nostim'], marker=m, color='black', alpha=0.65, s=55, zorder=3)
-                        ax.scatter(x_s, row['stim'], marker=m, color='black', alpha=0.95, s=55, zorder=3)
-                    else:
-                        ax.scatter(x_ns, row['nostim'], marker=m, facecolors='white', edgecolors='black',
-                                   linewidths=1.1, alpha=0.85, s=60, zorder=3)
-                        ax.scatter(x_s, row['stim'], marker=m, facecolors='white', edgecolors='black',
-                                   linewidths=1.3, alpha=1.0, s=60, zorder=3)
+            if show_patients:
+                for i, roi in enumerate(roi_order):
+                    roi_df = df_band[df_band['Region'] == roi]
+                    for _, row in roi_df.iterrows():
+                        x_ns = x_base[i] + offsets['nostim']
+                        x_s = x_base[i] + offsets['stim']
+                        ax.plot([x_ns, x_s], [row['nostim'], row['stim']],
+                                color='black', alpha=0.35, linewidth=1)
+                        m, filled = patient_markers[row['Patient']]
+                        if filled:
+                            ax.scatter(x_ns, row['nostim'], marker=m, color='black', alpha=0.65, s=55, zorder=3)
+                            ax.scatter(x_s, row['stim'], marker=m, color='black', alpha=0.95, s=55, zorder=3)
+                        else:
+                            ax.scatter(x_ns, row['nostim'], marker=m, facecolors='white', edgecolors='black',
+                                       linewidths=1.1, alpha=0.85, s=60, zorder=3)
+                            ax.scatter(x_s, row['stim'], marker=m, facecolors='white', edgecolors='black',
+                                       linewidths=1.3, alpha=1.0, s=60, zorder=3)
 
             ax.set_xticks(x_base)
             ax.set_xticklabels(roi_order, fontsize=14, fontweight='bold')
@@ -1592,18 +1682,19 @@ def plot_connected_dots(data, out_dir, label):
                        ncol=2, frameon=False, fontsize=12, title='Condition', title_fontsize=13,
                        handlelength=1.8, handletextpad=0.6, columnspacing=1.2, borderaxespad=0.2)
 
-            patient_handles = [
-                Line2D([0], [0], marker=patient_markers[p][0], color='black', linestyle='None',
-                       markerfacecolor='black' if patient_markers[p][1] else 'white',
-                       markeredgecolor='black', markeredgewidth=1.1, markersize=8, label=str(p))
-                for p in sorted(df_band['Patient'].unique())
-            ]
-            fig.legend(handles=patient_handles, loc='center left', bbox_to_anchor=(0.84, 0.50),
-                       ncol=2, columnspacing=0.9, handletextpad=0.4, labelspacing=0.45,
-                       frameon=False, fontsize=10, title='Patient', title_fontsize=12)
+            if show_patients:
+                patient_handles = [
+                    Line2D([0], [0], marker=patient_markers[p][0], color='black', linestyle='None',
+                           markerfacecolor='black' if patient_markers[p][1] else 'white',
+                           markeredgecolor='black', markeredgewidth=1.1, markersize=8, label=str(p))
+                    for p in sorted(df_band['Patient'].unique())
+                ]
+                fig.legend(handles=patient_handles, loc='center left', bbox_to_anchor=(0.84, 0.50),
+                           ncol=2, columnspacing=0.9, handletextpad=0.4, labelspacing=0.45,
+                           frameon=False, fontsize=10, title='Patient', title_fontsize=12)
 
-            fig.subplots_adjust(left=0.08, right=0.82, bottom=0.12, top=0.86)
-            plt.savefig(os.path.join(out_dir, f'{band}_StimVsNoStim_{mem}_retrieval.png'),
+            fig.subplots_adjust(left=0.08, right=0.95 if not show_patients else 0.82, bottom=0.12, top=0.86)
+            plt.savefig(os.path.join(out_dir, band_filename(f'StimVsNoStim_{mem}_retrieval{clean_suffix}.png', band)),
                         bbox_inches='tight', dpi=300)
             print(f"\n{label}: N subjects per ROI for {band} {mem_label}")
             print(df_band.groupby(['Region', 'Patient']).size().reset_index().groupby('Region')['Patient'].nunique())
@@ -1632,11 +1723,11 @@ def generate_memory_plots(data, out_dir, label):
     print(f"  Generating memory plots for {label}...")
     plot_quadrant_stim_memory(data, out_dir, label)
     plot_per_roi_quadrant(data, out_dir, label)
-    if data.get('has_bc_quadrant_plot'):
-        plot_bc_quadrant_stim_memory(data, out_dir, label)
+    plot_bc_quadrant_stim_memory(data, out_dir, label)
     plot_bc_bar_by_memory(data, out_dir, label)
     plot_bc_remembered_forgotten(data, out_dir, label)
     plot_connected_dots(data, out_dir, label)
+    plot_connected_dots(data, out_dir, label, show_patients=False)
 
 
 def write_bla_composite_logic_note(out_dir):
@@ -1683,10 +1774,10 @@ if __name__ == '__main__':
     print("=" * 60)
 
     print("\nLoading BLAES retrieval data...")
-    blaes = load_blaes_retrieval()
+    blaes = augment_with_allhpc_pair_composites(load_blaes_retrieval())
 
     print("\nLoading AMME retrieval data...")
-    amme = load_amme_retrieval()
+    amme = augment_with_allhpc_pair_composites(load_amme_retrieval())
 
     # Per-group plots
     reset_dir(OUTPUT_BASE)
@@ -1751,7 +1842,7 @@ if __name__ == '__main__':
             blaes.get('bc_plot_exclude_substrings'),
             amme.get('bc_plot_exclude_substrings'),
         ),
-        'has_bc_quadrant_plot': False,
+        'has_bc_quadrant_plot': True,
         'has_connected_dots_plot': True,
         'stim_rem': merge_dicts(blaes.get('stim_rem', {}), amme.get('stim_rem', {})),
         'stim_forg': merge_dicts(blaes.get('stim_forg', {}), amme.get('stim_forg', {})),
@@ -1766,7 +1857,7 @@ if __name__ == '__main__':
             for df in blaes.get('mlmr_export_frames', []) + amme.get('mlmr_export_frames', [])
         ],
     }
-    all_data = canonicalize_coherence_data(all_data)
+    all_data = augment_with_allhpc_pair_composites(canonicalize_coherence_data(all_data))
 
     print("\nExporting retrieval MLMR CSVs...")
     ensure_dir(CSV_OUTPUT_DIR)

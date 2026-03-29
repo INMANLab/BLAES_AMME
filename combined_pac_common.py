@@ -11,12 +11,21 @@ BLA_ALLHPC = 'BLA_ALLHPC'
 BLA_MTL = 'BLA_MTL'
 COMPOSITE_ROIS = [BLA_ALLHPC, BLA_MTL]
 ALLHPC_PARTNERS = {'CA', 'DG', 'HPC'}
+ALLHPC_EC = 'ALLHPC_EC'
+ALLHPC_PRC = 'ALLHPC_PRC'
+ALLHPC_PAIR_COMPOSITE_ROIS = [ALLHPC_EC, ALLHPC_PRC]
+ALLHPC_PAIR_SOURCES = {
+    ALLHPC_EC: {'CA_EC', 'DG_EC', 'EC_HPC'},
+    ALLHPC_PRC: {'CA_PRC', 'DG_PRC', 'HPC_PRC'},
+}
 COMPOSITE_LOGIC_TEXT = (
     'Composite logic: 1) average PAC across trials within each patient, original region pair, '
     'and condition to form one spectrum per region pair. 2) Build BLA_ALLHPC by averaging the '
     'already-averaged BLA_CA, BLA_DG, and BLA_HPC spectra within each patient and condition. '
     '3) Build BLA_MTL by averaging the already-averaged BLA-to-non-BLA spectra within each patient '
-    'and condition. 4) Compute plotted band means or contrasts from the resulting composite spectrum.'
+    'and condition. 4) Build ALLHPC_EC and ALLHPC_PRC by averaging the already-averaged CA/DG/HPC-to-EC '
+    'or -PRC spectra within each patient and condition. 5) Compute plotted band means or contrasts from '
+    'the resulting composite spectrum.'
 )
 
 
@@ -72,9 +81,10 @@ def subset_pac_data(data, predicate):
     return subset
 
 
-def merge_subject_dicts(first, second):
+def merge_subject_dicts(*sources):
     merged = {}
-    for source in [first or {}, second or {}]:
+    for source in sources:
+        source = source or {}
         for region, subject_dict in source.items():
             region_target = merged.setdefault(region, {})
             for subject, values in subject_dict.items():
@@ -139,6 +149,26 @@ def build_bla_composite_region_dict(region_dict):
             collapsed.setdefault(composite_roi, {})[subject] = np.nanmean(np.vstack(vectors), axis=0)
     return collapsed
 
+def build_allhpc_pair_composite_region_dict(region_dict):
+    composites = {roi: {} for roi in ALLHPC_PAIR_COMPOSITE_ROIS}
+    for region, subject_dict in (region_dict or {}).items():
+        if region in COMPOSITE_ROIS or region in ALLHPC_PAIR_COMPOSITE_ROIS:
+            continue
+        for composite_roi, source_rois in ALLHPC_PAIR_SOURCES.items():
+            if region not in source_rois:
+                continue
+            for subject, values in subject_dict.items():
+                arr = np.asarray(values, dtype=np.float64)
+                composites[composite_roi].setdefault(str(subject), []).append(arr)
+
+    collapsed = {}
+    for composite_roi, subject_dict in composites.items():
+        for subject, vectors in subject_dict.items():
+            if not vectors:
+                continue
+            collapsed.setdefault(composite_roi, {})[subject] = np.nanmean(np.vstack(vectors), axis=0)
+    return collapsed
+
 
 def build_bla_composite_data(data):
     composite_data = {}
@@ -155,13 +185,33 @@ def build_bla_composite_data(data):
             composite_data[key] = value
     return composite_data
 
+def build_allhpc_pair_composite_data(data):
+    composite_data = {}
+    for key, value in data.items():
+        if is_region_subject_dict(value):
+            composite_data[key] = build_allhpc_pair_composite_region_dict(value)
+        elif key == 'trial_count_rows':
+            composite_data[key] = []
+        elif isinstance(value, np.ndarray):
+            composite_data[key] = np.asarray(value, dtype=np.float64).copy()
+        elif isinstance(value, list):
+            composite_data[key] = deepcopy(value)
+        else:
+            composite_data[key] = value
+    return composite_data
+
 
 def augment_with_bla_composites(data):
     augmented = {}
     composite_data = build_bla_composite_data(data)
+    pair_composite_data = build_allhpc_pair_composite_data(data)
     for key, value in data.items():
         if is_region_subject_dict(value):
-            augmented[key] = merge_subject_dicts(value, composite_data.get(key, {}))
+            augmented[key] = merge_subject_dicts(
+                value,
+                composite_data.get(key, {}),
+                pair_composite_data.get(key, {}),
+            )
         elif key == 'trial_count_rows':
             augmented[key] = deepcopy(value)
         elif isinstance(value, np.ndarray):

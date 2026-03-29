@@ -49,6 +49,7 @@ from behavior_regression_memory_panels import (
 from combined_encoding_coherence import (
     BLA_ALLHPC,
     BLA_MTL,
+    augment_with_allhpc_pair_composites,
     build_bla_composite_data,
     load_amme_encoding,
     load_blaes_encoding,
@@ -73,8 +74,9 @@ BAND_LABELS = {
 LOGIC_NOTE = (
     "X-axis baseline-corrected FC: within each patient and ROI, average the baseline-corrected "
     "stim and nostim spectra separately for remembered and forgotten trials, then average within "
-    "the selected band. Composite ROIs average patient mean spectra across source BLA pairs before "
-    "the band-average scalar is taken. Y-axis memory modulation: dprime difference."
+    "the selected band. Composite ROIs average patient mean spectra across source BLA pairs "
+    "(BLA_ALLHPC, BLA_MTL) or across CA/DG/HPC-to-EC or -PRC pairs (ALLHPC_EC, ALLHPC_PRC) "
+    "before the band-average scalar is taken. Y-axis memory modulation: dprime difference."
 )
 
 
@@ -143,6 +145,7 @@ def load_all_encoding_data():
         "bc_nostim_rem": merge_dicts(blaes.get("bc_nostim_rem", {}), amme.get("bc_nostim_rem", {})),
         "bc_nostim_forg": merge_dicts(blaes.get("bc_nostim_forg", {}), amme.get("bc_nostim_forg", {})),
     }
+    all_data = augment_with_allhpc_pair_composites(all_data)
     composite_data = build_bla_composite_data(all_data)
     return all_data, composite_data
 

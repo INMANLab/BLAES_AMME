@@ -49,9 +49,10 @@ TARGET_COLUMN = "avg_stim_dprime_diff"
 TARGET_LABEL = "dprime difference"
 LOGIC_NOTE = (
     "X-axis baseline-corrected PAC: average the baseline-corrected stim and nostim PAC spectra "
-    "separately for remembered and forgotten trials within each patient and region pair, form BLA "
-    "composites only after those per-pair averages are computed, then average within the selected "
-    "PAC band. Y-axis memory modulation: dprime difference."
+    "separately for remembered and forgotten trials within each patient and region pair, form "
+    "composite ROIs only after those per-pair averages are computed (BLA_ALLHPC, BLA_MTL, "
+    "ALLHPC_EC, ALLHPC_PRC), then average within the selected PAC band. Y-axis memory modulation: "
+    "dprime difference."
 )
 
 
@@ -261,6 +262,7 @@ def main():
         "forgotten": average_condition_region_dicts(data["diff_stim_forg"], data["diff_nostim_forg"]),
     }
     pac_df = build_memory_pac_table(memory_pac, data["freqs_diff"], PAC_BANDS, "baseline_pac")
+    pac_df = pac_df[~pac_df["Region"].str.startswith("PNAS")].copy()
     pac_df = pac_df[np.isfinite(pac_df["baseline_pac"])].copy()
     joined = pac_df.merge(behavior, on="Patient", how="inner")
     joined = joined.dropna(subset=["baseline_pac", TARGET_COLUMN]).copy()

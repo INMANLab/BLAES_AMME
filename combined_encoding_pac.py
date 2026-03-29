@@ -4,7 +4,7 @@
 import shutil
 from pathlib import Path
 
-from combined_pac_common import COMPOSITE_LOGIC_TEXT, build_bla_composite_data, split_full_pac_data
+from combined_pac_common import COMPOSITE_LOGIC_TEXT, augment_with_bla_composites, build_bla_composite_data, split_full_pac_data
 from to_combine.BLAES_Group_PAC_analyses_from_matlab_encoding import (
     DATA_PATH,
     PAC_FILES,
@@ -91,6 +91,7 @@ def generate_memory_plots(data, out_dir, label, footer_text=None):
     plot_bc_bar_by_memory(data, out_dir, label, footer_text=footer_text)
     plot_bc_remembered_forgotten(data, out_dir, label, footer_text=footer_text)
     plot_connected_dots(data, out_dir, label, footer_text=footer_text)
+    plot_connected_dots(data, out_dir, label, footer_text=footer_text, show_patients=False)
 
 
 def generate_bla_composite_outputs(data, out_dir, csv_dir, label):
@@ -115,7 +116,10 @@ def generate_bla_composite_outputs(data, out_dir, csv_dir, label):
 
 def load_grouped_encoding_pac_data():
     full_data = load_blaes_encoding_pac()
-    return split_full_pac_data(full_data)
+    return {
+        key: augment_with_bla_composites(value)
+        for key, value in split_full_pac_data(full_data).items()
+    }
 
 
 def main():

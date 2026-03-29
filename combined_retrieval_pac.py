@@ -4,7 +4,7 @@
 import shutil
 from pathlib import Path
 
-from combined_pac_common import COMPOSITE_LOGIC_TEXT, build_bla_composite_data, split_full_pac_data
+from combined_pac_common import COMPOSITE_LOGIC_TEXT, augment_with_bla_composites, build_bla_composite_data, split_full_pac_data
 from to_combine.BLAES_Group_PAC_analyses_from_matlab_retrieval import (
     DATA_PATH,
     PAC_FILES,
@@ -15,6 +15,7 @@ from to_combine.BLAES_Group_PAC_analyses_from_matlab_retrieval import (
     plot_bc_bar_graph,
     plot_bc_per_roi,
     plot_bc_remembered_forgotten,
+    plot_connected_dots,
     plot_mi_difference_per_roi,
     plot_pac_by_patient,
     plot_pac_by_roi,
@@ -89,6 +90,8 @@ def generate_memory_plots(data, out_dir, label, footer_text=None):
     plot_per_roi_quadrant(data, out_dir, label, footer_text=footer_text)
     plot_bc_bar_by_memory(data, out_dir, label, footer_text=footer_text)
     plot_bc_remembered_forgotten(data, out_dir, label, footer_text=footer_text)
+    plot_connected_dots(data, out_dir, label, footer_text=footer_text)
+    plot_connected_dots(data, out_dir, label, footer_text=footer_text, show_patients=False)
 
 
 def generate_bla_composite_outputs(data, out_dir, csv_dir, label):
@@ -113,7 +116,10 @@ def generate_bla_composite_outputs(data, out_dir, csv_dir, label):
 
 def load_grouped_retrieval_pac_data():
     full_data = load_blaes_retrieval_pac()
-    return split_full_pac_data(full_data)
+    return {
+        key: augment_with_bla_composites(value)
+        for key, value in split_full_pac_data(full_data).items()
+    }
 
 
 def main():

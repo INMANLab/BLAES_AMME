@@ -45,6 +45,7 @@ from behavior_regression_memory_panels import (
 )
 from combined_encoding_coherence import BLA_ALLHPC, BLA_MTL, build_bla_composite_data
 from combined_retrieval_coherence import (
+    augment_with_allhpc_pair_composites,
     load_amme_retrieval,
     load_blaes_retrieval,
     merge_dicts,
@@ -69,7 +70,8 @@ LOGIC_NOTE = (
     "X-axis baseline-corrected FC: within each patient and retrieval region pair, average the "
     "baseline-corrected stim and nostim spectra separately for remembered and forgotten trials, "
     "then average within the selected band. Composite ROIs average patient mean spectra across source "
-    "BLA pairs before the band-average scalar is taken. Y-axis memory modulation: dprime difference."
+    "BLA pairs (BLA_ALLHPC, BLA_MTL) or across CA/DG/HPC-to-EC or -PRC pairs (ALLHPC_EC, ALLHPC_PRC) "
+    "before the band-average scalar is taken. Y-axis memory modulation: dprime difference."
 )
 
 
@@ -138,14 +140,17 @@ def load_all_retrieval_data():
         "bc_nostim_rem": merge_dicts(blaes["bc_nostim_rem"], amme["bc_nostim_rem"]),
         "bc_nostim_forg": merge_dicts(blaes["bc_nostim_forg"], amme["bc_nostim_forg"]),
     }
+    all_data = augment_with_allhpc_pair_composites(all_data)
     composite_data = build_bla_composite_data(all_data)
     return all_data, composite_data
 
 
 def regression_rois(all_data, composite_data):
-    base_rois = visible_rois(all_data.keys(), set())
-    composite_rois = visible_rois(composite_data.keys(), set())
-    return sorted(set(base_rois) | set(composite_rois) | {BLA_ALLHPC, BLA_MTL})
+    original_rois = visible_rois(
+        all_data["group_all_power"].keys(),
+        all_data.get("overall_plot_exclude_substrings", set()),
+    )
+    return sorted(set(original_rois) | set(composite_data["group_all_power"].keys()))
 
 
 def load_behavior():
@@ -183,6 +188,7 @@ def main():
     reset_dir(OUTPUT_DIR)
     behavior = load_behavior()
     all_data, composite_data = load_all_retrieval_data()
+    source_rois = regression_rois(all_data, composite_data)
     memory_base = {
         "remembered": average_condition_region_dicts(all_data["bc_stim_rem"], all_data["bc_nostim_rem"]),
         "forgotten": average_condition_region_dicts(all_data["bc_stim_forg"], all_data["bc_nostim_forg"]),
@@ -191,10 +197,6 @@ def main():
         "remembered": average_condition_region_dicts(composite_data["bc_stim_rem"], composite_data["bc_nostim_rem"]),
         "forgotten": average_condition_region_dicts(composite_data["bc_stim_forg"], composite_data["bc_nostim_forg"]),
     }
-    source_rois = regression_rois(
-        average_condition_region_dicts(*memory_base.values()),
-        average_condition_region_dicts(*memory_composite.values()),
-    )
     base_df = build_memory_band_table(memory_base, all_data["freqs_diff"], BAND_SPECS, "baseline_fc")
     composite_df = build_memory_band_table(memory_composite, composite_data["freqs_diff"], BAND_SPECS, "baseline_fc")
     fc_df = pd.concat([base_df, composite_df], ignore_index=True)
