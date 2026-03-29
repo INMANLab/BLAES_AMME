@@ -49,10 +49,9 @@ TARGET_COLUMN = "avg_stim_dprime_diff"
 TARGET_LABEL = "dprime difference"
 LOGIC_NOTE = (
     "X-axis baseline-corrected PAC: average the baseline-corrected stim and nostim PAC spectra "
-    "separately for remembered and forgotten trials within each patient and region pair, form "
-    "composite ROIs only after those per-pair averages are computed (BLA_ALLHPC, BLA_MTL, "
-    "ALLHPC_EC, ALLHPC_PRC), then average within the selected PAC band. Y-axis memory modulation: "
-    "dprime difference."
+    "separately for remembered and forgotten trials within each patient and directed region pair, "
+    "form any requested directional composite ROI only after those ordered-pair averages are "
+    "computed, then average within the selected PAC band. Y-axis memory modulation: dprime difference."
 )
 
 

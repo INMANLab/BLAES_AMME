@@ -224,8 +224,6 @@ def freq_values(freq_cols, prefix):
 def clean_region_label(region):
     parts = [part.strip() for part in str(region).split('_') if part.strip()]
     cleaned = ['EC' if part == 'ER' else part for part in parts]
-    if len(cleaned) == 2:
-        cleaned = sorted(cleaned)
     return '_'.join(cleaned)
 
 

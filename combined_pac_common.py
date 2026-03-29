@@ -10,22 +10,24 @@ import pandas as pd
 BLA_ALLHPC = 'BLA_ALLHPC'
 BLA_MTL = 'BLA_MTL'
 COMPOSITE_ROIS = [BLA_ALLHPC, BLA_MTL]
-ALLHPC_PARTNERS = {'CA', 'DG', 'HPC'}
-ALLHPC_EC = 'ALLHPC_EC'
-ALLHPC_PRC = 'ALLHPC_PRC'
-ALLHPC_PAIR_COMPOSITE_ROIS = [ALLHPC_EC, ALLHPC_PRC]
-ALLHPC_PAIR_SOURCES = {
-    ALLHPC_EC: {'CA_EC', 'DG_EC', 'EC_HPC'},
-    ALLHPC_PRC: {'CA_PRC', 'DG_PRC', 'HPC_PRC'},
+BASE_REGIONS = ('BLA', 'CA', 'DG', 'HPC', 'EC', 'PRC')
+REGION_GROUPS = {
+    'BLA': ('BLA',),
+    'MTL': ('CA', 'DG', 'HPC', 'EC', 'PRC'),
+    'ALLHPC': ('CA', 'DG', 'HPC'),
+    'HPC': ('HPC',),
+    'CA': ('CA',),
+    'DG': ('DG',),
+    'EC': ('EC',),
+    'PRC': ('PRC',),
 }
 COMPOSITE_LOGIC_TEXT = (
-    'Composite logic: 1) average PAC across trials within each patient, original region pair, '
-    'and condition to form one spectrum per region pair. 2) Build BLA_ALLHPC by averaging the '
-    'already-averaged BLA_CA, BLA_DG, and BLA_HPC spectra within each patient and condition. '
-    '3) Build BLA_MTL by averaging the already-averaged BLA-to-non-BLA spectra within each patient '
-    'and condition. 4) Build ALLHPC_EC and ALLHPC_PRC by averaging the already-averaged CA/DG/HPC-to-EC '
-    'or -PRC spectra within each patient and condition. 5) Compute plotted band means or contrasts from '
-    'the resulting composite spectrum.'
+    'Composite logic: 1) preserve source-to-target PAC direction for each original region pair. '
+    '2) Average PAC across trials within each patient, ordered region pair, and condition to form one '
+    'spectrum per directed pair. 3) For composite ROIs such as BLA_ALLHPC, ALLHPC_BLA, BLA_MTL, '
+    'MTL_BLA, ALLHPC_EC, EC_ALLHPC, ALLHPC_PRC, and PRC_ALLHPC, average the already-averaged spectra '
+    'across the matching directed source pairs within each patient and condition. 4) Compute plotted '
+    'band means or contrasts from the resulting directed composite spectrum.'
 )
 
 
@@ -127,18 +129,58 @@ def bla_partner_region(region):
     return parts[0] if parts[1] == 'BLA' else parts[1]
 
 
+def split_directional_region(region):
+    parts = [part.strip() for part in str(region).split('_') if part.strip()]
+    if len(parts) != 2:
+        return None
+    return tuple(parts)
+
+
+def is_supported_directional_region(region):
+    parts = split_directional_region(region)
+    if parts is None:
+        return False
+    source, target = parts
+    return source in BASE_REGIONS and target in BASE_REGIONS and source != target
+
+
+def build_directional_group_sources():
+    source_map = {}
+    for source_group, source_members in REGION_GROUPS.items():
+        for target_group, target_members in REGION_GROUPS.items():
+            if source_group == target_group:
+                continue
+            if len(source_members) == 1 and len(target_members) == 1:
+                continue
+            roi_name = f'{source_group}_{target_group}'
+            source_rois = {
+                f'{source_region}_{target_region}'
+                for source_region in source_members
+                for target_region in target_members
+                if source_region != target_region
+            }
+            if source_rois:
+                source_map[roi_name] = source_rois
+    return source_map
+
+
+DIRECTIONAL_GROUP_SOURCES = build_directional_group_sources()
+
+
 def build_bla_composite_region_dict(region_dict):
     composites = {roi: {} for roi in COMPOSITE_ROIS}
     for region, subject_dict in (region_dict or {}).items():
-        if region in COMPOSITE_ROIS:
+        parts = split_directional_region(region)
+        if region in COMPOSITE_ROIS or parts is None:
             continue
-        partner = bla_partner_region(region)
-        if partner is None:
+        source_region, target_region = parts
+        if source_region != 'BLA' or target_region == 'BLA':
             continue
         for subject, values in subject_dict.items():
             arr = np.asarray(values, dtype=np.float64)
-            composites[BLA_MTL].setdefault(str(subject), []).append(arr)
-            if partner in ALLHPC_PARTNERS:
+            if target_region in REGION_GROUPS['MTL']:
+                composites[BLA_MTL].setdefault(str(subject), []).append(arr)
+            if target_region in REGION_GROUPS['ALLHPC']:
                 composites[BLA_ALLHPC].setdefault(str(subject), []).append(arr)
 
     collapsed = {}
@@ -150,11 +192,15 @@ def build_bla_composite_region_dict(region_dict):
     return collapsed
 
 def build_allhpc_pair_composite_region_dict(region_dict):
-    composites = {roi: {} for roi in ALLHPC_PAIR_COMPOSITE_ROIS}
+    composites = {roi: {} for roi in DIRECTIONAL_GROUP_SOURCES}
     for region, subject_dict in (region_dict or {}).items():
-        if region in COMPOSITE_ROIS or region in ALLHPC_PAIR_COMPOSITE_ROIS:
+        if (
+            region in COMPOSITE_ROIS
+            or region in DIRECTIONAL_GROUP_SOURCES
+            or not is_supported_directional_region(region)
+        ):
             continue
-        for composite_roi, source_rois in ALLHPC_PAIR_SOURCES.items():
+        for composite_roi, source_rois in DIRECTIONAL_GROUP_SOURCES.items():
             if region not in source_rois:
                 continue
             for subject, values in subject_dict.items():
