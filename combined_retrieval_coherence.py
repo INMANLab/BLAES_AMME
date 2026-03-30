@@ -333,6 +333,8 @@ def plot_responder_status_bargraph(df_collapsed, out_dir, title, ylabel, filenam
     roi_order = list(dict.fromkeys(plot_df['Region']))
     if not roi_order:
         return
+    use_rotated_ticks = rotate_xticks or len(roi_order) > 8 or any(len(str(roi)) > 8 for roi in roi_order)
+    fig_width = max(14.0, min(24.0, 7.0 + 0.85 * len(roi_order)))
 
     gray_values = np.linspace(0.85, 0.45, len(roi_order))
     bar_colors = {
@@ -356,7 +358,7 @@ def plot_responder_status_bargraph(df_collapsed, out_dir, title, ylabel, filenam
         )
 
     for band in power_order:
-        fig, ax = plt.subplots(figsize=(11.5, 8.2))
+        fig, ax = plt.subplots(figsize=(fig_width, 8.2))
         band_df = plot_df[plot_df['power_range'] == band].copy()
         summary = band_df.groupby('Region')['mean_power_diff'].agg(['mean', 'sem']).reindex(roi_order)
         x = np.arange(len(roi_order))
@@ -393,9 +395,9 @@ def plot_responder_status_bargraph(df_collapsed, out_dir, title, ylabel, filenam
         ax.set_xticks(x)
         ax.set_xticklabels(
             roi_order,
-            rotation=45 if rotate_xticks else 0,
-            ha='right' if rotate_xticks else 'center',
-            fontsize=14,
+            rotation=35 if use_rotated_ticks else 0,
+            ha='right' if use_rotated_ticks else 'center',
+            fontsize=12 if use_rotated_ticks else 14,
             fontweight='bold',
         )
         ax.tick_params(axis='y', labelsize=15, width=2, length=6)
@@ -413,7 +415,7 @@ def plot_responder_status_bargraph(df_collapsed, out_dir, title, ylabel, filenam
                 fontsize=14,
                 title_fontsize=16,
             )
-        fig.tight_layout(rect=[0, 0, 1, 0.83])
+        fig.tight_layout(rect=[0, 0.06 if use_rotated_ticks else 0, 1, 0.83])
         fig.savefig(os.path.join(out_dir, band_filename(filename, band)), dpi=300, bbox_inches='tight')
         finalize_figure(fig)
 
