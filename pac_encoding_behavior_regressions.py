@@ -44,7 +44,7 @@ from combined_pac_common import COMPOSITE_LOGIC_TEXT, augment_with_bla_composite
 from to_combine.BLAES_Group_PAC_analyses_from_matlab_encoding import PAC_BANDS
 
 
-OUTPUT_DIR = SCRIPT_DIR / "outputs" / "PAC_encoding_behavior_regressions"
+OUTPUT_DIR = SCRIPT_DIR / "outputs" / "encoding_pac_behavior_regressions"
 TARGET_COLUMN = "avg_stim_dprime_diff"
 TARGET_LABEL = "dprime difference"
 LOGIC_NOTE = (

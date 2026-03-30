@@ -40,7 +40,7 @@ def get_script_dir():
 
 SCRIPT_DIR = get_script_dir()
 OUTPUT_ROOT = os.path.join(SCRIPT_DIR, 'outputs')
-OUTPUT_BASE = os.path.join(OUTPUT_ROOT, 'power_encoding')
+OUTPUT_BASE = os.path.join(OUTPUT_ROOT, 'encoding_power')
 CSV_OUTPUT_DIR = os.path.join(OUTPUT_ROOT, 'csvs')
 RESPONDER_STATUS_CSV = os.path.join(CSV_OUTPUT_DIR, 'AMMEBLAES_responder_status.csv')
 

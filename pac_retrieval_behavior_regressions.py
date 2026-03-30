@@ -44,7 +44,7 @@ from combined_retrieval_pac import load_grouped_retrieval_pac_data
 from to_combine.BLAES_Group_PAC_analyses_from_matlab_retrieval import PAC_BANDS
 
 
-OUTPUT_DIR = SCRIPT_DIR / "outputs" / "PAC_retrieval_behavior_regressions"
+OUTPUT_DIR = SCRIPT_DIR / "outputs" / "retrieval_pac_behavior_regressions"
 TARGET_COLUMN = "avg_stim_dprime_diff"
 TARGET_LABEL = "dprime difference"
 LOGIC_NOTE = (

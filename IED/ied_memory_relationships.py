@@ -10,7 +10,7 @@
 # - Each point in the plots is one patient.
 # - `Spearman rho` is the rank-based correlation coefficient.
 #
-# Outputs from this analysis are written under `outputs/ied_memory_relationships/`.
+# Outputs from this analysis are written under `outputs/IED_memory_relationships/`.
 
 # %%
 from pathlib import Path
@@ -66,8 +66,8 @@ BASE_DIR = Path.cwd()
 BEHAVIOR_PATH = BASE_DIR / "AMMEBLAES_includedpts_firstsession_behavioral.csv"
 if not BEHAVIOR_PATH.exists():
     BEHAVIOR_PATH = BASE_DIR / "behavioral figures" / "AMMEBLAES_includedpts_firstsession_behavioral.csv"
-IED_DIR = Path(os.environ.get("IED_SUMMARY_DIR", str(BASE_DIR / "outputs" / "ied_trial_level_summary")))
-OUTPUT_DIR = Path(os.environ.get("IED_MEMORY_OUTPUT_DIR", str(BASE_DIR / "outputs" / "ied_memory_relationships")))
+IED_DIR = Path(os.environ.get("IED_SUMMARY_DIR", str(BASE_DIR / "outputs" / "IED_trial_level_summary")))
+OUTPUT_DIR = Path(os.environ.get("IED_MEMORY_OUTPUT_DIR", str(BASE_DIR / "outputs" / "IED_memory_relationships")))
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 plt.style.use("default")

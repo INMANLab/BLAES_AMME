@@ -12,7 +12,7 @@
 # - The `GrayMatter` summary is computed from row-level data because tissue is a channel-level attribute.
 #   The `G` vs `W` distribution excludes `B` and missing values; those are saved separately for QA.
 #
-# Outputs from this analysis are written under `outputs/ied_trial_level_summary/`.
+# Outputs from this analysis are written under `outputs/IED_trial_level_summary/`.
 
 # %%
 from pathlib import Path
@@ -51,9 +51,9 @@ INPUT_NAME = os.environ.get("IED_TRIAL_INPUT_NAME", DEFAULT_INPUT_NAME)
 CSV_PATH = BASE_DIR / "IED" / INPUT_NAME
 
 if INPUT_NAME == DEFAULT_INPUT_NAME:
-    OUTPUT_DIR = BASE_DIR / "outputs" / "ied_trial_level_summary"
+    OUTPUT_DIR = BASE_DIR / "outputs" / "IED_trial_level_summary"
 else:
-    OUTPUT_DIR = BASE_DIR / "outputs" / "ied_trial_level_summary" / Path(INPUT_NAME).stem
+    OUTPUT_DIR = BASE_DIR / "outputs" / "IED_trial_level_summary" / Path(INPUT_NAME).stem
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 AUGMENTED_CSV_PATH = OUTPUT_DIR / f"{Path(INPUT_NAME).stem}_with_IEDRateAvg.csv"

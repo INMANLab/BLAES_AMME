@@ -27,7 +27,7 @@ from to_combine.BLAES_Group_PAC_analyses_from_matlab_retrieval import (
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-OUTPUT_BASE = SCRIPT_DIR / 'outputs' / 'PAC_retrieval'
+OUTPUT_BASE = SCRIPT_DIR / 'outputs' / 'retrieval_pac'
 
 
 def reset_dir(path):
