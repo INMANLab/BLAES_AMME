@@ -1471,6 +1471,14 @@ def plot_bc_bar_by_memory(data, out_dir, label):
         unique_rois = sorted(df_mem['Region'].unique())
         if not unique_rois:
             continue
+        plot_responder_status_bargraph(
+            df_mem[df_mem['Region'].isin(unique_rois)],
+            out_dir,
+            f'{label} Retrieval Baseline-Corrected Coherency Diff (Stim - No Stim), {mem_label} Trials',
+            'Baseline-Corrected Coherency Diff',
+            f'Bargraph_baseline_corrected_coherencyDiff_byROI_retrieval_{mem}_responder_status.png',
+            caption_text=f'Method: For each patient and ROI, baseline-corrected coherency spectra are averaged across stim and no-stim {mem_label.lower()} retrieval trials separately, band means are computed, then Stim-NoStim is taken. Bars = mean across patients, error bars = SEM, dots = patient values colored by responder-status CSV.',
+        )
         palette = make_roi_color_map(unique_rois)
         for band in [b for b in POWER_RANGES if b in df_mem['power_range'].unique()]:
             sub = df_mem[df_mem['power_range'] == band]

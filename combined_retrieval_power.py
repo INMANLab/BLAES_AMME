@@ -1293,6 +1293,14 @@ def plot_bc_bar_by_memory(data, out_dir, label):
         unique_rois = [r for r in df_mem['Region'].unique() if r in ROI_COLORS_BAR]
         if not unique_rois:
             continue
+        plot_responder_status_bargraph(
+            df_mem[df_mem['Region'].isin(unique_rois)],
+            out_dir,
+            f'{label} Retrieval Baseline-Corrected Power Diff (Stim - No Stim), {mem_label} Trials',
+            'Baseline-Corrected Power Diff',
+            f'Bargraph_baseline_corrected_powerDiff_byROI_retrieval_{mem}_responder_status.png',
+            caption_text=f'Method: For each patient and ROI, baseline-corrected spectra are averaged across stim and no-stim {mem_label.lower()} retrieval trials separately, band means are computed, then Stim-NoStim is taken. Bars = mean across patients, error bars = SEM, dots = patient values colored by responder-status CSV.',
+        )
         palette = {r: ROI_COLORS_BAR.get(r, '#808080') for r in unique_rois}
         power_order = [band for band in POWER_RANGES if band in df_mem['power_range'].unique()]
         if not power_order:
