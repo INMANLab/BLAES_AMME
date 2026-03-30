@@ -1284,6 +1284,7 @@ def plot_bc_bar_by_memory(data, out_dir, label):
     df_all = df_all[~df_all['Region'].str.startswith('PNAS')]
     if df_all.empty:
         return
+    mem_source_lookup = {mem: (sd, nd) for mem, sd, nd in mem_pairs}
 
     # Split by memory
     for mem, mem_label in [('remembered', 'Remembered'), ('forgotten', 'Forgotten')]:
@@ -1293,6 +1294,21 @@ def plot_bc_bar_by_memory(data, out_dir, label):
         unique_rois = [r for r in df_mem['Region'].unique() if r in ROI_COLORS_BAR]
         if not unique_rois:
             continue
+        sd, nd = mem_source_lookup[mem]
+        df_condition = compute_condition_band_df(sd, nd, freqs, POWER_RANGES)
+        nostim_responder_df = df_condition.rename(columns={'nostim': 'mean_power_diff'})[
+            ['Patient', 'Region', 'power_range', 'mean_power_diff']
+        ].copy()
+        nostim_responder_df = nostim_responder_df[nostim_responder_df['Region'].isin(unique_rois)]
+        if not nostim_responder_df.empty:
+            plot_responder_status_bargraph(
+                nostim_responder_df,
+                out_dir,
+                f'{label} Retrieval Baseline-Corrected Power, No Stim {mem_label} Trials',
+                'Baseline-Corrected Power',
+                f'Bargraph_baseline_corrected_power_byROI_retrieval_nostim_{mem}_responder_status.png',
+                caption_text=f'Method: For each patient and ROI, baseline-corrected spectra are averaged across no-stim {mem_label.lower()} retrieval trials, then band means are computed. Bars = mean across patients, error bars = SEM, dots = patient values colored by responder-status CSV.',
+            )
         plot_responder_status_bargraph(
             df_mem[df_mem['Region'].isin(unique_rois)],
             out_dir,
