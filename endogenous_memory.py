@@ -31,6 +31,7 @@ sys.path.insert(0, SCRIPT_DIR)
 
 OUTPUT_ROOT = os.path.join(SCRIPT_DIR, 'outputs', 'endogenous_memory')
 CSV_OUTPUT_DIR = os.path.join(OUTPUT_ROOT, 'csvs')
+RESPONDER_STATUS_CSV = os.path.join(SCRIPT_DIR, 'outputs', 'csvs', 'AMMEBLAES_responder_status.csv')
 
 POWER_RANGES = {'Theta': (4, 8), 'Slow gamma': (30, 55)}
 PAC_BANDS = {'Slow gamma': (30, 55)}
@@ -46,6 +47,20 @@ ROI_COLORS_BAR = {
     'EC': '#800080', 'PHG': '#0000FF', 'PRC': '#FFC0CB',
 }
 MEMORY_COLORS = {'Remembered': '#7B2D8E', 'Forgotten': '#DAA520'}
+RESPONDER_ORDER = [
+    'Strong responders',
+    'Moderate responders',
+    'Non-responders',
+    'Anti-responders',
+]
+RESPONDER_PALETTE = {
+    'Strong responders': '#5B1A78',
+    'Moderate responders': '#B21D6B',
+    'Non-responders': '#F04646',
+    'Anti-responders': '#F79B62',
+    'Unknown': '#7F7F7F',
+}
+_RESPONDER_STATUS_MAP = None
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +132,183 @@ def make_subject_color_map(subjects):
     ordered = sorted(subjects)
     palette = sns.color_palette('husl', len(ordered))
     return {s: c for s, c in zip(ordered, palette)}
+
+
+def get_responder_status_map():
+    global _RESPONDER_STATUS_MAP
+    if _RESPONDER_STATUS_MAP is not None:
+        return _RESPONDER_STATUS_MAP
+    if not os.path.exists(RESPONDER_STATUS_CSV):
+        _RESPONDER_STATUS_MAP = {}
+        return _RESPONDER_STATUS_MAP
+    status_df = pd.read_csv(RESPONDER_STATUS_CSV)
+    status_column = None
+    for candidate in ['Responder status', 'Responder_status', 'quartile']:
+        if candidate in status_df.columns:
+            status_column = candidate
+            break
+    if status_column is None or 'Patient' not in status_df.columns:
+        _RESPONDER_STATUS_MAP = {}
+        return _RESPONDER_STATUS_MAP
+    status_df = status_df[['Patient', status_column]].dropna(subset=['Patient']).copy()
+    status_df['Patient'] = status_df['Patient'].astype(str)
+    _RESPONDER_STATUS_MAP = dict(zip(status_df['Patient'], status_df[status_column]))
+    return _RESPONDER_STATUS_MAP
+
+
+def get_anchor_region(roi_name):
+    return str(roi_name).split('_', 1)[0]
+
+
+def remove_matching_files(out_dir, prefixes):
+    if not os.path.isdir(out_dir):
+        return
+    for filename in os.listdir(out_dir):
+        if any(filename.startswith(prefix) for prefix in prefixes):
+            os.remove(os.path.join(out_dir, filename))
+
+
+def plot_anchor_subset_bargraph(
+    subset_df,
+    out_dir,
+    label,
+    phase_label,
+    band,
+    anchor,
+    measure_label,
+    responder_colored=False,
+):
+    if subset_df.empty:
+        return
+
+    roi_order = sorted(subset_df['Region'].unique())
+    if not roi_order:
+        return
+
+    fig_width = max(10.5, 1.25 * len(roi_order) + 3.0)
+    fig, ax = plt.subplots(figsize=(fig_width, 8.2))
+    x = np.arange(len(roi_order))
+    summary = subset_df.groupby('Region')['rem_minus_forg'].agg(['mean', 'sem']).reindex(roi_order)
+    gray_values = np.linspace(0.85, 0.45, len(roi_order))
+    bar_colors = {roi: matplotlib.colors.to_hex((g, g, g)) for roi, g in zip(roi_order, gray_values)}
+    ax.bar(
+        x,
+        summary['mean'].to_numpy(),
+        yerr=summary['sem'].fillna(0).to_numpy(),
+        color=[bar_colors[r] for r in roi_order],
+        edgecolor='#4D4D4D',
+        linewidth=1.2,
+        width=0.72,
+        capsize=3,
+        ecolor='#4D4D4D',
+        zorder=1,
+    )
+
+    rng = np.random.default_rng(7)
+    plot_df = subset_df.copy()
+    if responder_colored:
+        plot_df['Responder status'] = plot_df['Patient'].map(get_responder_status_map()).fillna('Unknown')
+
+    for idx, roi in enumerate(roi_order):
+        roi_df = plot_df[plot_df['Region'] == roi]
+        jitter = rng.uniform(-0.16, 0.16, len(roi_df))
+        if responder_colored:
+            colors = [RESPONDER_PALETTE.get(status, RESPONDER_PALETTE['Unknown']) for status in roi_df['Responder status']]
+            ax.scatter(
+                np.full(len(roi_df), idx, dtype=float) + jitter,
+                roi_df['rem_minus_forg'],
+                c=colors,
+                s=52,
+                alpha=0.85,
+                edgecolors='none',
+                zorder=3,
+            )
+        else:
+            ax.scatter(
+                np.full(len(roi_df), idx, dtype=float) + jitter,
+                roi_df['rem_minus_forg'],
+                c='black',
+                s=42,
+                alpha=0.55,
+                zorder=3,
+            )
+
+    ax.axhline(0, color='#4D4D4D', linewidth=1.2, zorder=0)
+    ax.set_xticks(x)
+    ax.set_xticklabels(roi_order, fontsize=16, fontweight='bold', rotation=45, ha='right')
+    ax.tick_params(axis='y', labelsize=15, width=2, length=6)
+    ax.set_ylabel(
+        f'Remembered − Forgotten\n(Baseline-Corrected {measure_label})',
+        fontsize=16,
+        fontweight='bold',
+    )
+    ax.set_title(band, fontsize=20, fontweight='bold')
+    fig.suptitle(
+        f'{label} {phase_label} Endogenous Memory Effect (NoStim) — {anchor} Connections',
+        fontsize=22,
+        fontweight='bold',
+        y=0.98,
+    )
+    caption = (
+        'Method: For each patient and region pair, baseline-corrected spectra are averaged across '
+        'remembered and forgotten NoStim trials separately, band means are computed, then '
+        'Remembered − Forgotten is taken. Bars = mean ± SEM, dots = individual patients.'
+    )
+    if responder_colored:
+        caption += ' Dots are colored by responder-status CSV.'
+    fig.text(0.015, 0.015, caption, ha='left', va='bottom', fontsize=9, wrap=True)
+
+    legend_handles = []
+    if responder_colored:
+        for status in RESPONDER_ORDER:
+            if status in plot_df['Responder status'].values:
+                legend_handles.append(
+                    Line2D(
+                        [0],
+                        [0],
+                        marker='o',
+                        linestyle='',
+                        markersize=9,
+                        markerfacecolor=RESPONDER_PALETTE[status],
+                        markeredgecolor='none',
+                        label=status,
+                    )
+                )
+        if 'Unknown' in plot_df['Responder status'].values:
+            legend_handles.append(
+                Line2D(
+                    [0],
+                    [0],
+                    marker='o',
+                    linestyle='',
+                    markersize=9,
+                    markerfacecolor=RESPONDER_PALETTE['Unknown'],
+                    markeredgecolor='none',
+                    label='Unknown',
+                )
+            )
+    if legend_handles:
+        fig.legend(
+            handles=legend_handles,
+            loc='upper center',
+            bbox_to_anchor=(0.5, 0.92),
+            ncol=min(5, len(legend_handles)),
+            frameon=False,
+            fontsize=12,
+            title='Responder status',
+            title_fontsize=13,
+        )
+        fig.tight_layout(rect=[0, 0.06, 1, 0.88])
+    else:
+        fig.tight_layout(rect=[0, 0.06, 1, 0.90])
+
+    responder_suffix = '_responder_status' if responder_colored else ''
+    out_name = (
+        f'Endogenous_Bargraph_RemMinusForg_{measure_label}_{phase_label.lower()}_'
+        f'{anchor}_connections_{band.lower().replace(" ", "_")}{responder_suffix}.png'
+    )
+    plt.savefig(os.path.join(out_dir, out_name), dpi=300, bbox_inches='tight')
+    finalize_figure(fig)
 
 
 # ---------------------------------------------------------------------------
@@ -205,6 +397,7 @@ def plot_overall_by_patient(endo, out_dir, label, measure_label, phase_label):
     ax.set_title(f'{label} {phase_label} Endogenous {measure_label} by Patient (NoStim Only)',
                  fontsize=18, fontweight='bold')
     ax.tick_params(axis='both', labelsize=14)
+    set_freq_xlim(ax, freqs)
     ax.legend(bbox_to_anchor=(1.02, 0.5), loc='center left', prop={'weight': 'bold', 'size': 10})
     plt.tight_layout(rect=[0, 0, 0.82, 1])
     plt.savefig(os.path.join(out_dir, f'Endogenous_{measure_label}_byPatient_{phase_label.lower()}.png'),
@@ -233,6 +426,8 @@ def plot_remembered_vs_forgotten_spectra(endo, out_dir, label, measure_label, ph
         ax.set_xlabel('Frequency (Hz)', fontsize=16, fontweight='bold')
         ax.tick_params(axis='both', labelsize=12)
     axes[0].set_ylabel(f'{measure_label}', fontsize=16, fontweight='bold')
+    for ax in axes:
+        set_freq_xlim(ax, freqs)
     axes[1].legend(bbox_to_anchor=(1.02, 0.5), loc='center left', prop={'weight': 'bold', 'size': 11})
     fig.suptitle(f'{label} {phase_label} Endogenous {measure_label}: Remembered vs Forgotten (NoStim)',
                  fontsize=18, fontweight='bold')
@@ -266,6 +461,8 @@ def plot_per_roi_rem_vs_forg_patients(endo, out_dir, label, measure_label, phase
             ax.set_xlabel('Frequency (Hz)', fontsize=16, fontweight='bold')
             ax.tick_params(axis='both', labelsize=12)
         axes[0].set_ylabel(f'{measure_label}', fontsize=16, fontweight='bold')
+        for ax in axes:
+            set_freq_xlim(ax, freqs)
         handles, labels_ = collect_unique_legend_items(axes)
         if handles:
             fig.legend(handles, labels_, bbox_to_anchor=(0.88, 0.5), loc='center left',
@@ -389,6 +586,44 @@ def plot_bc_band_bargraph(endo, out_dir, label, measure_label, phase_label, band
     if not rows:
         return
     df = pd.DataFrame(rows)
+
+    if measure_label == 'PAC':
+        remove_matching_files(
+            out_dir,
+            prefixes=[
+                'Endogenous_Bargraph_RemMinusForg_PAC_',
+            ],
+        )
+        for band in band_ranges:
+            band_df = df[df['power_range'] == band].copy()
+            if band_df.empty:
+                continue
+            band_df['anchor'] = band_df['Region'].map(get_anchor_region)
+            for anchor in sorted(band_df['anchor'].unique()):
+                subset_df = band_df[band_df['anchor'] == anchor].copy()
+                if subset_df.empty:
+                    continue
+                plot_anchor_subset_bargraph(
+                    subset_df=subset_df,
+                    out_dir=out_dir,
+                    label=label,
+                    phase_label=phase_label,
+                    band=band,
+                    anchor=anchor,
+                    measure_label=measure_label,
+                    responder_colored=False,
+                )
+                plot_anchor_subset_bargraph(
+                    subset_df=subset_df,
+                    out_dir=out_dir,
+                    label=label,
+                    phase_label=phase_label,
+                    band=band,
+                    anchor=anchor,
+                    measure_label=measure_label,
+                    responder_colored=True,
+                )
+        return
 
     for band in band_ranges:
         band_df = df[df['power_range'] == band]
