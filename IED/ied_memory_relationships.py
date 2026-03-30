@@ -357,13 +357,13 @@ def run_encoding_stim_split_regressions(
             "title": "Encoding: Subsequent memory vs Stimulated IED-trial proportion",
             "xlabel": "Stimulated IED-positive trial proportion",
             "filename": "memory_vs_stimulated_trials_pct_encoding.png",
-            "color": "#D1495B",
+            "color": "#D62728",
         },
         "nonstim_trials_pct": {
             "title": "Encoding: Subsequent memory vs Non-stimulated IED-trial proportion",
             "xlabel": "Non-stimulated IED-positive trial proportion",
             "filename": "memory_vs_nonstim_trials_pct_encoding.png",
-            "color": "#4C78A8",
+            "color": "#1F77B4",
         },
     }
 
