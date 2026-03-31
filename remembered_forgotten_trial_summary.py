@@ -11,9 +11,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from balanced_memory_trials import MIN_TRIALS_PER_CONDITION
+
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = SCRIPT_DIR / 'outputs'
+BALANCED_OUTPUT_DIR = OUTPUT_DIR / 'balanced_memory_trials'
 COUNTS_CSV = OUTPUT_DIR / 'remembered_forgotten_by_subject.csv'
 BY_SUBJECT_FIG = OUTPUT_DIR / 'remembered_forgotten_by_subject.png'
 AVG_COUNTS_FIG = OUTPUT_DIR / 'avg_remembered_forgotten.png'
@@ -196,16 +199,45 @@ def plot_average_percentages(df: pd.DataFrame, out_path: Path) -> None:
     plt.close(fig)
 
 
+def get_balanced_subset(df: pd.DataFrame) -> pd.DataFrame:
+    return df[
+        (df['Remembered'] >= MIN_TRIALS_PER_CONDITION) &
+        (df['Forgotten'] >= MIN_TRIALS_PER_CONDITION)
+    ].copy()
+
+
+def write_subset_csv(df: pd.DataFrame, out_path: Path) -> None:
+    export_df = df.copy()
+    export_df['Pct_Remembered'] = export_df['remembered_pct'].round(1)
+    export_df['Pct_Forgotten'] = export_df['forgotten_pct'].round(1)
+    export_df = export_df[
+        ['Subject', 'Forgotten', 'Remembered', 'Total', 'Pct_Remembered', 'Pct_Forgotten']
+    ]
+    export_df.to_csv(out_path, index=False)
+
+
+def render_summary_set(df: pd.DataFrame, out_dir: Path) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    write_subset_csv(df, out_dir / 'remembered_forgotten_by_subject.csv')
+    plot_by_subject(df, out_dir / 'remembered_forgotten_by_subject.png')
+    plot_average_counts(df, out_dir / 'avg_remembered_forgotten.png')
+    plot_average_percentages(df, out_dir / 'avg_remembered_forgotten_percentage.png')
+
+
 def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     df = load_counts(COUNTS_CSV)
-    plot_by_subject(df, BY_SUBJECT_FIG)
-    plot_average_counts(df, AVG_COUNTS_FIG)
-    plot_average_percentages(df, AVG_PERCENT_FIG)
+    balanced_df = get_balanced_subset(df)
+
+    render_summary_set(df, OUTPUT_DIR)
+    render_summary_set(balanced_df, BALANCED_OUTPUT_DIR)
 
     print(f'Wrote {BY_SUBJECT_FIG}')
     print(f'Wrote {AVG_COUNTS_FIG}')
     print(f'Wrote {AVG_PERCENT_FIG}')
+    print(f"Wrote {BALANCED_OUTPUT_DIR / 'remembered_forgotten_by_subject.png'}")
+    print(f"Wrote {BALANCED_OUTPUT_DIR / 'avg_remembered_forgotten.png'}")
+    print(f"Wrote {BALANCED_OUTPUT_DIR / 'avg_remembered_forgotten_percentage.png'}")
 
 
 if __name__ == '__main__':
