@@ -587,13 +587,8 @@ def plot_bc_band_bargraph(endo, out_dir, label, measure_label, phase_label, band
         return
     df = pd.DataFrame(rows)
 
-    if measure_label == 'PAC':
-        remove_matching_files(
-            out_dir,
-            prefixes=[
-                'Endogenous_Bargraph_RemMinusForg_PAC_',
-            ],
-        )
+    # PAC and Coherence: split by anchor region (too many pairs for single figure)
+    if measure_label in ('PAC', 'Coherence'):
         for band in band_ranges:
             band_df = df[df['power_range'] == band].copy()
             if band_df.empty:
@@ -625,53 +620,92 @@ def plot_bc_band_bargraph(endo, out_dir, label, measure_label, phase_label, band
                 )
         return
 
+    # Power (and other non-pair measures): single bargraph per band
     for band in band_ranges:
-        band_df = df[df['power_range'] == band]
+        band_df = df[df['power_range'] == band].copy()
         if band_df.empty:
             continue
         roi_order = [r for r in ROI_COLORS_BAR if r in band_df['Region'].unique()]
         if not roi_order:
             roi_order = sorted(band_df['Region'].unique())
 
-        fig, ax = plt.subplots(figsize=(11.5, 8.2))
-        x = np.arange(len(roi_order))
-        summary = band_df.groupby('Region')['rem_minus_forg'].agg(['mean', 'sem']).reindex(roi_order)
-        gray_values = np.linspace(0.85, 0.45, len(roi_order))
-        bar_colors = {roi: matplotlib.colors.to_hex((g, g, g)) for roi, g in zip(roi_order, gray_values)}
-        ax.bar(
-            x, summary['mean'].to_numpy(),
-            yerr=summary['sem'].fillna(0).to_numpy(),
-            color=[bar_colors[r] for r in roi_order],
-            edgecolor='#4D4D4D', linewidth=1.2, width=0.72,
-            capsize=3, ecolor='#4D4D4D', zorder=1,
-        )
-        rng = np.random.default_rng(7)
-        for idx, roi in enumerate(roi_order):
-            roi_df = band_df[band_df['Region'] == roi]
-            jitter = rng.uniform(-0.16, 0.16, len(roi_df))
-            ax.scatter(
-                np.full(len(roi_df), idx, dtype=float) + jitter,
-                roi_df['rem_minus_forg'], c='black', s=42, alpha=0.6, zorder=3,
+        for responder_colored in [False, True]:
+            fig, ax = plt.subplots(figsize=(11.5, 8.2))
+            x = np.arange(len(roi_order))
+            summary = band_df.groupby('Region')['rem_minus_forg'].agg(['mean', 'sem']).reindex(roi_order)
+            gray_values = np.linspace(0.85, 0.45, len(roi_order))
+            bar_colors_map = {roi: matplotlib.colors.to_hex((g, g, g)) for roi, g in zip(roi_order, gray_values)}
+            ax.bar(
+                x, summary['mean'].to_numpy(),
+                yerr=summary['sem'].fillna(0).to_numpy(),
+                color=[bar_colors_map[r] for r in roi_order],
+                edgecolor='#4D4D4D', linewidth=1.2, width=0.72,
+                capsize=3, ecolor='#4D4D4D', zorder=1,
             )
-        ax.axhline(0, color='#4D4D4D', linewidth=1.2, zorder=0)
-        ax.set_xticks(x)
-        ax.set_xticklabels(roi_order, fontsize=16, fontweight='bold')
-        ax.tick_params(axis='y', labelsize=15, width=2, length=6)
-        ax.set_ylabel(f'Remembered − Forgotten\n(Baseline-Corrected {measure_label})',
-                      fontsize=16, fontweight='bold')
-        ax.set_title(band, fontsize=20, fontweight='bold')
-        fig.suptitle(f'{label} {phase_label} Endogenous Memory Effect (NoStim)',
-                     fontsize=22, fontweight='bold', y=0.98)
-        fig.text(0.015, 0.015,
-                 'Method: For each patient and ROI, baseline-corrected spectra are averaged across '
-                 'remembered and forgotten NoStim trials separately, band means are computed, then '
-                 'Remembered − Forgotten is taken. Bars = mean ± SEM, dots = individual patients.',
-                 ha='left', va='bottom', fontsize=9, wrap=True)
-        fig.tight_layout(rect=[0, 0.06, 1, 0.90])
-        plt.savefig(os.path.join(out_dir,
-                    band_filename(f'Endogenous_Bargraph_RemMinusForg_{measure_label}_{phase_label.lower()}.png', band)),
-                    dpi=300, bbox_inches='tight')
-        finalize_figure(fig)
+            rng = np.random.default_rng(7)
+            plot_df = band_df.copy()
+            if responder_colored:
+                plot_df['Responder status'] = plot_df['Patient'].map(get_responder_status_map()).fillna('Unknown')
+
+            for idx, roi in enumerate(roi_order):
+                roi_df = plot_df[plot_df['Region'] == roi]
+                jitter = rng.uniform(-0.16, 0.16, len(roi_df))
+                if responder_colored:
+                    colors = [RESPONDER_PALETTE.get(s, RESPONDER_PALETTE['Unknown']) for s in roi_df['Responder status']]
+                    ax.scatter(
+                        np.full(len(roi_df), idx, dtype=float) + jitter,
+                        roi_df['rem_minus_forg'], c=colors, s=52, alpha=0.85,
+                        edgecolors='none', zorder=3,
+                    )
+                else:
+                    ax.scatter(
+                        np.full(len(roi_df), idx, dtype=float) + jitter,
+                        roi_df['rem_minus_forg'], c='black', s=42, alpha=0.6, zorder=3,
+                    )
+            ax.axhline(0, color='#4D4D4D', linewidth=1.2, zorder=0)
+            ax.set_xticks(x)
+            ax.set_xticklabels(roi_order, fontsize=16, fontweight='bold')
+            ax.tick_params(axis='y', labelsize=15, width=2, length=6)
+            ax.set_ylabel(f'Remembered − Forgotten\n(Baseline-Corrected {measure_label})',
+                          fontsize=16, fontweight='bold')
+            ax.set_title(band, fontsize=20, fontweight='bold')
+            fig.suptitle(f'{label} {phase_label} Endogenous Memory Effect (NoStim)',
+                         fontsize=22, fontweight='bold', y=0.98)
+            caption = (
+                'Method: For each patient and ROI, baseline-corrected spectra are averaged across '
+                'remembered and forgotten NoStim trials separately, band means are computed, then '
+                'Remembered − Forgotten is taken. Bars = mean ± SEM, dots = individual patients.'
+            )
+            if responder_colored:
+                caption += ' Dots are colored by responder-status CSV.'
+            fig.text(0.015, 0.015, caption, ha='left', va='bottom', fontsize=9, wrap=True)
+
+            legend_handles = []
+            if responder_colored:
+                for status in RESPONDER_ORDER:
+                    if status in plot_df['Responder status'].values:
+                        legend_handles.append(
+                            Line2D([0], [0], marker='o', linestyle='', markersize=9,
+                                   markerfacecolor=RESPONDER_PALETTE[status],
+                                   markeredgecolor='none', label=status))
+                if 'Unknown' in plot_df['Responder status'].values:
+                    legend_handles.append(
+                        Line2D([0], [0], marker='o', linestyle='', markersize=9,
+                               markerfacecolor=RESPONDER_PALETTE['Unknown'],
+                               markeredgecolor='none', label='Unknown'))
+            if legend_handles:
+                fig.legend(handles=legend_handles, loc='upper center', bbox_to_anchor=(0.5, 0.92),
+                           ncol=min(5, len(legend_handles)), frameon=False, fontsize=12,
+                           title='Responder status', title_fontsize=13)
+                fig.tight_layout(rect=[0, 0.06, 1, 0.88])
+            else:
+                fig.tight_layout(rect=[0, 0.06, 1, 0.90])
+
+            responder_suffix = '_responder_status' if responder_colored else ''
+            plt.savefig(os.path.join(out_dir,
+                        band_filename(f'Endogenous_Bargraph_RemMinusForg_{measure_label}_{phase_label.lower()}{responder_suffix}.png', band)),
+                        dpi=300, bbox_inches='tight')
+            finalize_figure(fig)
 
 
 def plot_bc_paired_rem_forg_bars(endo, out_dir, label, measure_label, phase_label, band_ranges=None):
