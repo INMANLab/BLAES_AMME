@@ -100,6 +100,7 @@ MEMORY_ORDER = ['remembered', 'forgotten']
 STIM_LABELS = {'nostim': 'No Stim', 'stim': 'Stim'}
 MEMORY_LABELS = {'remembered': 'Remembered', 'forgotten': 'Forgotten'}
 STIM_COLORS = {'nostim': '#1f77b4', 'stim': '#d62728'}
+MEMORY_COLORS = {'remembered': '#7B2D8E', 'forgotten': '#DAA520'}
 
 
 def ensure_dir(path: Path) -> Path:
@@ -832,6 +833,102 @@ def plot_band_summary(
     axes[0, 0].set_ylabel(ylabel, fontsize=12, fontweight='bold')
     fig.suptitle(f'{title_prefix} Band Summary', fontsize=16, fontweight='bold')
     fig.tight_layout(rect=[0, 0, 1, 0.95])
+    fig.savefig(out_path, dpi=300, bbox_inches='tight')
+    finalize_figure(fig)
+
+
+def plot_memory_percent_across_subjects(selection_df: pd.DataFrame, out_path: Path, title_prefix: str):
+    if selection_df.empty:
+        return
+    plot_df = selection_df.copy()
+    totals = plot_df['remembered'] + plot_df['forgotten']
+    plot_df = plot_df[totals > 0].copy()
+    if plot_df.empty:
+        return
+    plot_df['remembered_pct'] = plot_df['remembered'] / totals * 100.0
+    plot_df['forgotten_pct'] = plot_df['forgotten'] / totals * 100.0
+
+    fig, ax = plt.subplots(figsize=(7.5, 7.5))
+    categories = ['remembered_pct', 'forgotten_pct']
+    labels = ['Remembered', 'Forgotten']
+    rng = np.random.default_rng(29)
+
+    for idx, (category, label) in enumerate(zip(categories, labels)):
+        values = plot_df[category].to_numpy(dtype=float)
+        mean_value = float(np.nanmean(values))
+        sem_value = float(pd.Series(values).sem()) if len(values) > 1 else 0.0
+        ax.bar(
+            idx,
+            mean_value,
+            yerr=sem_value,
+            color=MEMORY_COLORS[category.replace('_pct', '')],
+            edgecolor='black',
+            linewidth=1.2,
+            width=0.5,
+            capsize=4,
+        )
+        jitter = rng.uniform(-0.08, 0.08, len(values))
+        ax.scatter(
+            np.full(len(values), idx) + jitter,
+            values,
+            color='black',
+            alpha=0.35,
+            s=34,
+        )
+        ax.text(idx, mean_value + sem_value + 1.8, f'{mean_value:.1f}%', ha='center', va='bottom',
+                fontsize=17, fontweight='bold')
+
+    ax.set_xticks(range(len(labels)))
+    ax.set_xticklabels(labels, fontsize=18)
+    ax.set_ylim(0, 100)
+    ax.set_ylabel("Mean % of Each Subject's Total Trials", fontsize=21)
+    ax.set_title(f'{title_prefix} Across Subjects (±SEM)', fontsize=24, fontweight='bold')
+    ax.tick_params(axis='y', labelsize=15)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=300, bbox_inches='tight')
+    finalize_figure(fig)
+
+
+def plot_memory_percent_by_subject(selection_df: pd.DataFrame, out_path: Path, title_prefix: str):
+    if selection_df.empty:
+        return
+    plot_df = selection_df.copy()
+    totals = plot_df['remembered'] + plot_df['forgotten']
+    plot_df = plot_df[totals > 0].copy()
+    if plot_df.empty:
+        return
+    plot_df['remembered_pct'] = plot_df['remembered'] / totals * 100.0
+    plot_df['forgotten_pct'] = plot_df['forgotten'] / totals * 100.0
+    plot_df = plot_df.sort_values(['forgotten_pct', 'Patient']).reset_index(drop=True)
+
+    x = np.arange(len(plot_df))
+    fig, ax = plt.subplots(figsize=(max(14, len(plot_df) * 0.45), 7.5))
+    ax.bar(
+        x,
+        plot_df['remembered_pct'],
+        color=MEMORY_COLORS['remembered'],
+        label='Remembered',
+    )
+    ax.bar(
+        x,
+        plot_df['forgotten_pct'],
+        bottom=plot_df['remembered_pct'],
+        color=MEMORY_COLORS['forgotten'],
+        label='Forgotten',
+    )
+    ax.set_ylim(0, 100)
+    ax.set_xticks(x)
+    ax.set_xticklabels(plot_df['Patient'], rotation=90, fontsize=10)
+    ax.set_ylabel("% of Each Subject's Total Trials", fontsize=18)
+    ax.set_xlabel('Subject', fontsize=18)
+    ax.set_title(f'{title_prefix} by Subject', fontsize=24, fontweight='bold')
+    ax.tick_params(axis='y', labelsize=13)
+    ax.legend(frameon=True, fontsize=14, loc='upper left')
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    fig.tight_layout()
     fig.savefig(out_path, dpi=300, bbox_inches='tight')
     finalize_figure(fig)
 
