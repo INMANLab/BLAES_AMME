@@ -36,6 +36,10 @@ from endogenous_memory import (
 )
 
 
+def balanced_plot_label(group_label):
+    return f'{group_label} Balanced Memory Conditions'
+
+
 # ---------------------------------------------------------------------------
 # Subject filtering logic
 # ---------------------------------------------------------------------------
@@ -192,11 +196,12 @@ def run_power_analysis():
         filtered_data = filter_subject_dicts(data, keep)
         endo = extract_endogenous(filtered_data, measure='power')
         out = ensure_dir(os.path.join(OUTPUT_ROOT, 'encoding_power', group_label.lower()))
-        generate_endogenous_plots(endo, out, group_label, 'Power', 'Encoding')
+        plot_label = balanced_plot_label(group_label)
+        generate_endogenous_plots(endo, out, plot_label, 'Power', 'Encoding')
         add_balanced_stim_memory_plots(
             filtered_data,
             out,
-            group_label,
+            plot_label,
             generate_encoding_common_plots,
             generate_encoding_memory_plots,
         )
@@ -225,11 +230,12 @@ def run_power_analysis():
         filtered_data = filter_subject_dicts(data, keep)
         endo = extract_endogenous(filtered_data, measure='power')
         out = ensure_dir(os.path.join(OUTPUT_ROOT, 'retrieval_power', group_label.lower()))
-        generate_endogenous_plots(endo, out, group_label, 'Power', 'Retrieval')
+        plot_label = balanced_plot_label(group_label)
+        generate_endogenous_plots(endo, out, plot_label, 'Power', 'Retrieval')
         add_balanced_stim_memory_plots(
             filtered_data,
             out,
-            group_label,
+            plot_label,
             generate_retrieval_common_plots,
             generate_retrieval_memory_plots,
         )
@@ -285,11 +291,12 @@ def run_coherence_analysis():
         filtered_data = filter_subject_dicts(data, keep)
         endo = extract_endogenous(filtered_data, measure='coherence')
         out = ensure_dir(os.path.join(OUTPUT_ROOT, 'encoding_coherence', group_label.lower()))
-        generate_endogenous_plots(endo, out, group_label, 'Coherence', 'Encoding')
+        plot_label = balanced_plot_label(group_label)
+        generate_endogenous_plots(endo, out, plot_label, 'Coherence', 'Encoding')
         add_balanced_stim_memory_plots(
             filtered_data,
             out,
-            group_label,
+            plot_label,
             generate_encoding_common_plots,
             generate_encoding_memory_plots,
         )
@@ -319,11 +326,12 @@ def run_coherence_analysis():
         filtered_data = filter_subject_dicts(data, keep)
         endo = extract_endogenous(filtered_data, measure='coherence')
         out = ensure_dir(os.path.join(OUTPUT_ROOT, 'retrieval_coherence', group_label.lower()))
-        generate_endogenous_plots(endo, out, group_label, 'Coherence', 'Retrieval')
+        plot_label = balanced_plot_label(group_label)
+        generate_endogenous_plots(endo, out, plot_label, 'Coherence', 'Retrieval')
         add_balanced_stim_memory_plots(
             filtered_data,
             out,
-            group_label,
+            plot_label,
             generate_retrieval_common_plots,
             generate_retrieval_memory_plots,
         )
@@ -362,6 +370,7 @@ def run_pac_analysis(enc_balanced_subjects=None, ret_balanced_subjects=None):
     print("\n  Loading encoding PAC data...")
     grouped_enc = load_grouped_encoding_pac_data()
     for group_key, label in [('blaes', 'BLAES'), ('amme', 'AMME'), ('all', 'All')]:
+        plot_label = balanced_plot_label(label)
         keep = enc_balanced_subjects.get(group_key) if enc_balanced_subjects else None
         if keep is not None:
             print(f"    {label}: using {len(keep)} balanced subjects from power encoding filter")
@@ -370,17 +379,18 @@ def run_pac_analysis(enc_balanced_subjects=None, ret_balanced_subjects=None):
         add_balanced_stim_memory_plots(
             filtered_data,
             out,
-            label,
+            plot_label,
             generate_encoding_common_plots,
             generate_encoding_memory_plots,
         )
         endo = extract_endogenous(filtered_data, measure='pac')
-        generate_endogenous_plots(endo, out, label, 'PAC', 'Encoding', band_ranges=PAC_BANDS)
+        generate_endogenous_plots(endo, out, plot_label, 'PAC', 'Encoding', band_ranges=PAC_BANDS)
 
     # --- Retrieval ---
     print("\n  Loading retrieval PAC data...")
     grouped_ret = load_grouped_retrieval_pac_data()
     for group_key, label in [('blaes', 'BLAES'), ('amme', 'AMME'), ('all', 'All')]:
+        plot_label = balanced_plot_label(label)
         keep = ret_balanced_subjects.get(group_key) if ret_balanced_subjects else None
         if keep is not None:
             print(f"    {label}: using {len(keep)} balanced subjects from power retrieval filter")
@@ -389,12 +399,12 @@ def run_pac_analysis(enc_balanced_subjects=None, ret_balanced_subjects=None):
         add_balanced_stim_memory_plots(
             filtered_data,
             out,
-            label,
+            plot_label,
             generate_retrieval_common_plots,
             generate_retrieval_memory_plots,
         )
         endo = extract_endogenous(filtered_data, measure='pac')
-        generate_endogenous_plots(endo, out, label, 'PAC', 'Retrieval', band_ranges=PAC_BANDS)
+        generate_endogenous_plots(endo, out, plot_label, 'PAC', 'Retrieval', band_ranges=PAC_BANDS)
 
     print("  PAC analysis complete.")
 
