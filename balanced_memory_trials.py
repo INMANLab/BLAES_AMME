@@ -24,6 +24,7 @@ sys.path.insert(0, SCRIPT_DIR)
 
 OUTPUT_ROOT = os.path.join(SCRIPT_DIR, 'outputs', 'balanced_memory_trials')
 CSV_OUTPUT_DIR = os.path.join(OUTPUT_ROOT, 'csvs')
+SUMMARY_OUTPUT_PATH = os.path.join(OUTPUT_ROOT, 'balanced_memory_conditions_summary.txt')
 
 MIN_TRIALS_PER_CONDITION = 10
 
@@ -91,22 +92,106 @@ def _count_from_data_dict(data):
     return None
 
 
-def get_balanced_subjects(trial_counts, min_trials=MIN_TRIALS_PER_CONDITION):
-    """Return set of subjects with >= min_trials in BOTH conditions."""
+def summarize_balanced_subjects(trial_counts, min_trials=MIN_TRIALS_PER_CONDITION):
+    """Return inclusion/exclusion details for the balanced-memory filter."""
     if not trial_counts:
-        return None
-    balanced = set()
+        return {
+            'included': set(),
+            'excluded': [],
+            'total': 0,
+            'min_trials': min_trials,
+        }
+
+    included = set()
     excluded = []
     for pat, cnts in sorted(trial_counts.items()):
-        if cnts['remembered'] >= min_trials and cnts['forgotten'] >= min_trials:
-            balanced.add(pat)
+        remembered = int(cnts['remembered'])
+        forgotten = int(cnts['forgotten'])
+        if remembered >= min_trials and forgotten >= min_trials:
+            included.add(pat)
         else:
-            excluded.append((pat, cnts['remembered'], cnts['forgotten']))
-    print(f"    Balanced subjects: {len(balanced)} / {len(trial_counts)} "
+            excluded.append({
+                'patient': pat,
+                'remembered': remembered,
+                'forgotten': forgotten,
+            })
+
+    return {
+        'included': included,
+        'excluded': excluded,
+        'total': len(trial_counts),
+        'min_trials': min_trials,
+    }
+
+
+def get_balanced_subjects(trial_counts, min_trials=MIN_TRIALS_PER_CONDITION):
+    """Return set of subjects with >= min_trials in BOTH conditions."""
+    summary = summarize_balanced_subjects(trial_counts, min_trials=min_trials)
+    if summary['total'] == 0:
+        return None
+    balanced = summary['included']
+    excluded = summary['excluded']
+    print(f"    Balanced subjects: {len(balanced)} / {summary['total']} "
           f"(excluded {len(excluded)} with <{min_trials} trials in a condition)")
-    for pat, r, f in excluded:
-        print(f"      Excluded: {pat} (rem={r}, forg={f})")
+    for row in excluded:
+        print(f"      Excluded: {row['patient']} (rem={row['remembered']}, forg={row['forgotten']})")
     return balanced
+
+
+def get_region_subject_counts(data):
+    """Count remaining unique subjects per region from a filtered data dict."""
+    region_counts = {}
+    for value in data.values():
+        if not isinstance(value, dict) or not value:
+            continue
+        first_val = next(iter(value.values()), None)
+        if not isinstance(first_val, dict):
+            continue
+        for region, subject_dict in value.items():
+            region_counts.setdefault(region, set()).update(map(str, subject_dict.keys()))
+    return {region: len(subjects) for region, subjects in sorted(region_counts.items())}
+
+
+def format_region_counts(region_counts):
+    if not region_counts:
+        return ['None']
+    return [f'{region}: {count}' for region, count in region_counts.items()]
+
+
+def write_balanced_summary_report(summary_rows, out_path=SUMMARY_OUTPUT_PATH):
+    lines = [
+        'Balanced Memory Conditions Summary',
+        '=' * 80,
+        f'Criterion: keep subjects with at least {MIN_TRIALS_PER_CONDITION} NoStim remembered trials',
+        f'and at least {MIN_TRIALS_PER_CONDITION} NoStim forgotten trials.',
+        '',
+    ]
+
+    for row in summary_rows:
+        lines.extend([
+            f"{row['measure']} | {row['phase']} | {row['group']}",
+            '-' * 80,
+            f"Included: {row['included_n']} / {row['total_n']}",
+            f"Excluded: {row['excluded_n']}",
+            'Excluded subjects:',
+        ])
+        if row['excluded']:
+            for excluded_row in row['excluded']:
+                lines.append(
+                    f"  {excluded_row['patient']}: remembered={excluded_row['remembered']}, "
+                    f"forgotten={excluded_row['forgotten']}"
+                )
+        else:
+            lines.append('  None')
+        lines.append('Remaining N across regions:')
+        lines.extend([f'  {line}' for line in format_region_counts(row['region_counts'])])
+        lines.append('')
+
+    ensure_dir(os.path.dirname(out_path))
+    with open(out_path, 'w', encoding='utf-8') as handle:
+        handle.write('\n'.join(lines).rstrip() + '\n')
+    print(f'  Wrote balanced-memory summary: {out_path}')
+    return out_path
 
 
 def filter_subject_dicts(data, keep_subjects):
@@ -177,6 +262,8 @@ def run_power_analysis():
         generate_memory_plots as generate_retrieval_memory_plots,
     )
 
+    summary_rows = []
+
     # --- Encoding ---
     print("\n  Loading encoding power data...")
     blaes_enc = load_blaes_encoding()
@@ -205,6 +292,18 @@ def run_power_analysis():
             generate_encoding_common_plots,
             generate_encoding_memory_plots,
         )
+        counts = get_nostim_trial_counts(data, measure='power')
+        summary = summarize_balanced_subjects(counts)
+        summary_rows.append({
+            'measure': 'Power',
+            'phase': 'Encoding',
+            'group': group_label,
+            'included_n': len(summary['included']),
+            'total_n': summary['total'],
+            'excluded_n': len(summary['excluded']),
+            'excluded': summary['excluded'],
+            'region_counts': get_region_subject_counts(filtered_data),
+        })
 
     for group_label, data in [('blaes', blaes_enc), ('amme', amme_enc), ('all', all_enc)]:
         keep = balanced_subjects[group_label]
@@ -239,6 +338,18 @@ def run_power_analysis():
             generate_retrieval_common_plots,
             generate_retrieval_memory_plots,
         )
+        counts = get_nostim_trial_counts(data, measure='power')
+        summary = summarize_balanced_subjects(counts)
+        summary_rows.append({
+            'measure': 'Power',
+            'phase': 'Retrieval',
+            'group': group_label,
+            'included_n': len(summary['included']),
+            'total_n': summary['total'],
+            'excluded_n': len(summary['excluded']),
+            'excluded': summary['excluded'],
+            'region_counts': get_region_subject_counts(filtered_data),
+        })
 
     for group_label, data in [('blaes', blaes_ret), ('amme', amme_ret), ('all', all_ret)]:
         keep = balanced_subjects_ret[group_label]
@@ -247,7 +358,7 @@ def run_power_analysis():
                                    f'balanced_retrieval_power_{group_label}_mlmr_input')
 
     print("  Power analysis complete.")
-    return balanced_subjects, balanced_subjects_ret
+    return balanced_subjects, balanced_subjects_ret, summary_rows
 
 
 # ---------------------------------------------------------------------------
@@ -272,6 +383,8 @@ def run_coherence_analysis():
         generate_memory_plots as generate_retrieval_memory_plots,
     )
     from endogenous_memory import _merge_coherence_data
+
+    summary_rows = []
 
     # --- Encoding ---
     print("\n  Loading encoding coherence data...")
@@ -300,6 +413,18 @@ def run_coherence_analysis():
             generate_encoding_common_plots,
             generate_encoding_memory_plots,
         )
+        counts = get_nostim_trial_counts(data, measure='coherence')
+        summary = summarize_balanced_subjects(counts)
+        summary_rows.append({
+            'measure': 'Coherence',
+            'phase': 'Encoding',
+            'group': group_label,
+            'included_n': len(summary['included']),
+            'total_n': summary['total'],
+            'excluded_n': len(summary['excluded']),
+            'excluded': summary['excluded'],
+            'region_counts': get_region_subject_counts(filtered_data),
+        })
 
     for group_label, data in [('blaes', blaes_enc), ('amme', amme_enc), ('all', all_enc)]:
         keep = balanced_subjects[group_label]
@@ -335,6 +460,18 @@ def run_coherence_analysis():
             generate_retrieval_common_plots,
             generate_retrieval_memory_plots,
         )
+        counts = get_nostim_trial_counts(data, measure='coherence')
+        summary = summarize_balanced_subjects(counts)
+        summary_rows.append({
+            'measure': 'Coherence',
+            'phase': 'Retrieval',
+            'group': group_label,
+            'included_n': len(summary['included']),
+            'total_n': summary['total'],
+            'excluded_n': len(summary['excluded']),
+            'excluded': summary['excluded'],
+            'region_counts': get_region_subject_counts(filtered_data),
+        })
 
     for group_label, data in [('blaes', blaes_ret), ('amme', amme_ret), ('all', all_ret)]:
         keep = balanced_subjects_ret[group_label]
@@ -344,6 +481,7 @@ def run_coherence_analysis():
                                    measure_name='Coherence')
 
     print("  Coherence analysis complete.")
+    return summary_rows
 
 
 # ---------------------------------------------------------------------------
@@ -366,6 +504,8 @@ def run_pac_analysis(enc_balanced_subjects=None, ret_balanced_subjects=None):
         generate_memory_plots as generate_retrieval_memory_plots,
     )
 
+    summary_rows = []
+
     # --- Encoding ---
     print("\n  Loading encoding PAC data...")
     grouped_enc = load_grouped_encoding_pac_data()
@@ -385,6 +525,16 @@ def run_pac_analysis(enc_balanced_subjects=None, ret_balanced_subjects=None):
         )
         endo = extract_endogenous(filtered_data, measure='pac')
         generate_endogenous_plots(endo, out, plot_label, 'PAC', 'Encoding', band_ranges=PAC_BANDS)
+        summary_rows.append({
+            'measure': 'PAC',
+            'phase': 'Encoding',
+            'group': label,
+            'included_n': len(keep) if keep is not None else 0,
+            'total_n': len(keep) if keep is not None else 0,
+            'excluded_n': 0,
+            'excluded': [],
+            'region_counts': get_region_subject_counts(filtered_data),
+        })
 
     # --- Retrieval ---
     print("\n  Loading retrieval PAC data...")
@@ -405,8 +555,19 @@ def run_pac_analysis(enc_balanced_subjects=None, ret_balanced_subjects=None):
         )
         endo = extract_endogenous(filtered_data, measure='pac')
         generate_endogenous_plots(endo, out, plot_label, 'PAC', 'Retrieval', band_ranges=PAC_BANDS)
+        summary_rows.append({
+            'measure': 'PAC',
+            'phase': 'Retrieval',
+            'group': label,
+            'included_n': len(keep) if keep is not None else 0,
+            'total_n': len(keep) if keep is not None else 0,
+            'excluded_n': 0,
+            'excluded': [],
+            'region_counts': get_region_subject_counts(filtered_data),
+        })
 
     print("  PAC analysis complete.")
+    return summary_rows
 
 
 # ---------------------------------------------------------------------------
@@ -423,9 +584,10 @@ def main():
     ensure_dir(OUTPUT_ROOT)
     ensure_dir(CSV_OUTPUT_DIR)
 
-    enc_balanced, ret_balanced = run_power_analysis()
-    run_coherence_analysis()
-    run_pac_analysis(enc_balanced_subjects=enc_balanced, ret_balanced_subjects=ret_balanced)
+    enc_balanced, ret_balanced, power_summary = run_power_analysis()
+    coherence_summary = run_coherence_analysis()
+    pac_summary = run_pac_analysis(enc_balanced_subjects=enc_balanced, ret_balanced_subjects=ret_balanced)
+    write_balanced_summary_report(power_summary + coherence_summary + pac_summary)
 
     print("\n" + "=" * 60)
     print(f"Done! Balanced memory trial outputs saved to: {OUTPUT_ROOT}")
