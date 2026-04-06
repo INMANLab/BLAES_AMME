@@ -51,6 +51,15 @@ def smooth_bridge(start_val, end_val, n):
     return start_val + (end_val - start_val) * (3 * x**2 - 2 * x**3)
 
 
+def positive_slow_wave(amp, total_dur, scale):
+    n = max(8, int(total_dur * fs))
+    wave = amp * scale * (1 - np.cos(2 * np.pi * np.arange(n) / n)) / 2
+
+    tl = min(20, n // 4)
+    wave[-tl:] *= np.linspace(1, 0, tl)
+    return wave
+
+
 # ── IED waveform generators ────────────────────────────────────────
 # These return (spike_waveform, slow_waveform, spike_len)
 # Spike goes through the filter; slow wave is added post-filter.
@@ -67,27 +76,24 @@ def ied_type_a(amp=500):
 
 
 def ied_type_e(amp=650):
-    """Type E: single large upward spike + long perfectly smooth slow wave."""
-    # spike (~25-35 ms)
-    n_spike = int(np.random.uniform(0.025, 0.035) * fs)
-    spike = amp * np.sin(np.pi * np.arange(n_spike) / n_spike)
-    tl = min(6, n_spike // 3)
+    """Type E: positive spike, negative trough, then smooth positive slowing."""
+    n_pos = int(np.random.uniform(0.022, 0.030) * fs)
+    n_neg = int(np.random.uniform(0.045, 0.065) * fs)
+    pos = amp * np.sin(np.pi * np.arange(n_pos) / n_pos)
+    neg = -amp * 0.72 * np.sin(np.pi * np.arange(n_neg) / n_neg)
+    spike = np.concatenate([pos, neg])
+
+    tl = min(6, len(spike) // 5)
     spike[:tl] *= np.linspace(0, 1, tl)
 
-    # slow wave: raised cosine, perfectly smooth (~200-300 ms)
-    slow_dur = np.random.uniform(0.20, 0.30)
-    n_slow = int(slow_dur * fs)
-    # single downward arch: -(1 - cos(2pi*x/n))/2
-    slow = -amp * 0.45 * (1 - np.cos(2 * np.pi * np.arange(n_slow) / n_slow)) / 2
-    # taper end
-    tl_s = min(20, n_slow // 4)
-    slow[-tl_s:] *= np.linspace(1, 0, tl_s)
+    slow_dur = np.random.uniform(0.18, 0.26)
+    slow = positive_slow_wave(amp=amp, total_dur=slow_dur, scale=0.30)
 
     return spike, slow, len(spike)
 
 
 def ied_type_j(amp=500):
-    """Type J: 2-5 polyspikes with variable heights. Slow wave separate."""
+    """Type J: polyspike burst, negative trough, then smooth positive slowing."""
     n_spikes = np.random.randint(2, 6)
     spike_dur_ms = np.random.uniform(12, 22)
     n_per_spike = int(spike_dur_ms / 1000 * fs)
@@ -102,17 +108,17 @@ def ied_type_j(amp=500):
             pieces.append(np.zeros(int(gap_ms / 1000 * fs)))
 
     polyspike = np.concatenate(pieces)
-    tl = min(6, len(polyspike) // 6)
-    polyspike[:tl] *= np.linspace(0, 1, tl)
+    n_neg = int(np.random.uniform(0.035, 0.055) * fs)
+    neg = -amp * 0.58 * np.sin(np.pi * np.arange(n_neg) / n_neg)
+    spike = np.concatenate([polyspike, neg])
 
-    # slow wave: raised cosine (~150-250 ms)
-    slow_dur = np.random.uniform(0.15, 0.25)
-    n_slow = int(slow_dur * fs)
-    slow = -amp * 0.50 * (1 - np.cos(2 * np.pi * np.arange(n_slow) / n_slow)) / 2
-    tl_s = min(20, n_slow // 4)
-    slow[-tl_s:] *= np.linspace(1, 0, tl_s)
+    tl = min(6, len(spike) // 6)
+    spike[:tl] *= np.linspace(0, 1, tl)
 
-    return polyspike, slow, len(polyspike)
+    slow_dur = np.random.uniform(0.14, 0.22)
+    slow = positive_slow_wave(amp=amp, total_dur=slow_dur, scale=0.24)
+
+    return spike, slow, len(spike)
 
 
 # ── build background ───────────────────────────────────────────────
