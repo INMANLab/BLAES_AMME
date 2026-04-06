@@ -286,7 +286,7 @@ ax2.axis('off')
 
 # scale bars: 100 µV vertical, 1 s horizontal just after signal end
 ylims = ax2.get_ylim()
-sb_x = single_end + 0.35
+sb_x = single_end + 0.08
 sb_y = ylims[0] + 45
 ax2.set_xlim(0, sb_x + 0.32)
 # vertical bar
