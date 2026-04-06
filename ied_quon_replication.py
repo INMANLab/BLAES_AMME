@@ -477,11 +477,10 @@ def figure2_supp_region_breakdown(dm):
     region_stats = remembered_by_group(mtl_data, 'mtl_region')
     if len(region_stats) > 0:
         region_stats = region_stats.sort_values('prop_remembered')
-        colors = [SIG_COLOR if r in ['Amygdala', 'Hippocampus'] else CB[0]
-                  for r in region_stats['group']]
-        bars = ax.barh(range(len(region_stats)), region_stats['prop_remembered'],
-                       xerr=1.96*region_stats['se'], color=colors, edgecolor='black',
-                       linewidth=0.5, capsize=4)
+        orange_colors = sns.light_palette('#E68613', n_colors=len(region_stats) + 2)[1:-1]
+        ax.barh(range(len(region_stats)), region_stats['prop_remembered'],
+                xerr=1.96*region_stats['se'], color=orange_colors, edgecolor='black',
+                linewidth=0.5, capsize=4)
         ax.set_yticks(range(len(region_stats)))
         ax.set_yticklabels(region_stats['group'])
         ax.set_xlabel('Proportion Remembered (± 95% CI)')
