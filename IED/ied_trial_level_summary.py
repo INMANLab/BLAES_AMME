@@ -19,6 +19,7 @@ from pathlib import Path
 import os
 
 import matplotlib
+from matplotlib.ticker import PercentFormatter
 import pandas as pd
 
 try:
@@ -111,10 +112,15 @@ def save_barplot(
     color: str,
     output_dir: Path,
     bar_color_map: dict[str, str] | None = None,
+    annotation_values: pd.Series | None = None,
+    annotation_fmt: str = "{value:.2f}",
+    y_axis_percent: bool = False,
 ) -> None:
     series = pd.to_numeric(series, errors="coerce").dropna()
     if series.empty:
         return
+    if annotation_values is not None:
+        annotation_values = pd.to_numeric(annotation_values.reindex(series.index), errors="coerce")
     fig, ax = plt.subplots(figsize=(7, 4.5))
     if bar_color_map:
         bar_colors = [bar_color_map.get(str(label), color) for label in series.index]
@@ -126,8 +132,19 @@ def save_barplot(
     ax.set_xlabel("")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
+    if y_axis_percent:
+        ax.yaxis.set_major_formatter(PercentFormatter(xmax=100))
     for idx, value in enumerate(series.values):
-        ax.text(idx, value, f"{value:.2f}", ha="center", va="bottom")
+        label_value = annotation_values.iloc[idx] if annotation_values is not None else value
+        if pd.isna(label_value):
+            continue
+        ax.text(
+            idx,
+            value,
+            annotation_fmt.format(value=label_value),
+            ha="center",
+            va="bottom",
+        )
     fig.tight_layout()
     fig.savefig(output_dir / filename, bbox_inches="tight")
     if running_in_notebook():
@@ -583,21 +600,30 @@ def run_summary_for_subset(df_in: pd.DataFrame, output_dir: Path, subset_label: 
     )
     condition_plot_values.to_csv(output_dir / "average_condition_distribution.csv", header=["average_percent"])
 
-    stim_plot_values = pd.Series(
+    stim_plot_counts = pd.Series(
         {
             "Stim": patient_trial_summary["stimulated_trials"].mean(),
             "No Stim": patient_trial_summary["nonstim_trials"].mean(),
         }
     )
+    stim_plot_values = stim_plot_counts.div(stim_plot_counts.sum()).mul(100)
     save_barplot(
         stim_plot_values,
         title=f"{phase_title}: Average Unique IED-Positive Trials Per Patient by Stim Condition",
-        ylabel="Average count of unique trials",
+        ylabel="% of average unique trials",
         filename="average_stim_distribution.png",
         color="#D98E04",
         output_dir=output_dir,
+        annotation_values=stim_plot_counts,
+        annotation_fmt="{value:.2f}",
+        y_axis_percent=True,
     )
-    stim_plot_values.to_csv(output_dir / "average_stim_distribution.csv", header=["average_count"])
+    pd.DataFrame(
+        {
+            "average_count": stim_plot_counts,
+            "average_percent": stim_plot_values,
+        }
+    ).to_csv(output_dir / "average_stim_distribution.csv")
 
     graymatter_qa = (
         df.groupby("Patient", dropna=False)["GrayMatter"]
