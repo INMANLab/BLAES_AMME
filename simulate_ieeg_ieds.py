@@ -75,6 +75,12 @@ def ied_type_a(amp=500):
     return spike, None, len(spike)
 
 
+def ied_type_a_negative(amp=500):
+    """Type A variant: brief symmetric sharp downward spike. No slow wave."""
+    spike, _, spike_len = ied_type_a(amp=amp)
+    return -spike, None, spike_len
+
+
 def ied_type_e(amp=650):
     """Type E: positive spike, negative trough, then smooth positive slowing."""
     n_pos = int(np.random.uniform(0.022, 0.030) * fs)
@@ -144,9 +150,14 @@ for ts in sync_times_hipp_amy:
 for ts in sync_times_rent:
     ied_schedule.append((ts, 'REnt1', 'A', np.random.uniform(470, 560)))
     ied_schedule.append((ts, 'REnt2', 'A', np.random.uniform(470, 560)))
-    ied_schedule.append((ts, 'REnt3', 'A', np.random.uniform(470, 560)))
+    ied_schedule.append((ts, 'REnt3', 'A_NEG', np.random.uniform(470, 560)))
 
-ied_generators = {'A': ied_type_a, 'E': ied_type_e, 'J': ied_type_j}
+ied_generators = {
+    'A': ied_type_a,
+    'A_NEG': ied_type_a_negative,
+    'E': ied_type_e,
+    'J': ied_type_j,
+}
 
 # ── inject ONLY spike portions into data (pre-filter) ──────────────
 # Store slow wave info for post-filter injection
