@@ -254,20 +254,27 @@ single_ch = filtered[0]  # LHipp1
 ax2.plot(t, single_ch, color='k', linewidth=0.6)
 ax2.set_xlim(0, duration)
 
+data_min = single_ch.min()
+data_max = single_ch.max()
+data_range = data_max - data_min
+bottom_pad = max(180, 0.30 * data_range)
+top_pad = 0.05 * data_range
+ax2.set_ylim(data_min - bottom_pad, data_max + top_pad)
+
 # remove all axes — clean like the reference
 ax2.axis('off')
 
-# scale bars: 100 µV vertical, 1 s horizontal (bottom-right corner)
+# scale bars: 100 µV vertical, 1 s horizontal in lower-right corner
 ylims = ax2.get_ylim()
-sb_x = duration - 1.5
-sb_y = ylims[0] + (ylims[1] - ylims[0]) * 0.1
+sb_x = duration - 0.45
+sb_y = ylims[0] + 45
 # vertical bar
 ax2.plot([sb_x, sb_x], [sb_y, sb_y + 100], 'k-', lw=2)
-ax2.text(sb_x - 0.15, sb_y + 50, '100 µV', va='center', ha='right',
-         fontsize=9, fontweight='bold')
+ax2.text(sb_x + 0.10, sb_y + 50, '100 µV', va='center', ha='left',
+         fontsize=9, fontweight='bold', rotation=90)
 # horizontal bar
-ax2.plot([sb_x, sb_x + 1.0], [sb_y, sb_y], 'k-', lw=2)
-ax2.text(sb_x + 0.5, sb_y - 25, '1 s', ha='center', fontsize=9,
+ax2.plot([sb_x - 1.0, sb_x], [sb_y, sb_y], 'k-', lw=2)
+ax2.text(sb_x - 0.5, sb_y - 22, '1 s', ha='center', fontsize=9,
          fontweight='bold')
 
 plt.tight_layout()
