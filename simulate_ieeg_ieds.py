@@ -268,11 +268,14 @@ plt.show()
 fig2, ax2 = plt.subplots(figsize=(8, 2.5))
 # just one channel of raw filtered data
 single_ch = filtered[0]  # LHipp1
-ax2.plot(t, single_ch, color='k', linewidth=0.6)
-ax2.set_xlim(0, duration)
+single_end = duration - 0.85
+single_mask = t <= single_end
+single_t = t[single_mask]
+single_visible = single_ch[single_mask]
+ax2.plot(single_t, single_visible, color='k', linewidth=0.6)
 
-data_min = single_ch.min()
-data_max = single_ch.max()
+data_min = single_visible.min()
+data_max = single_visible.max()
 data_range = data_max - data_min
 bottom_pad = max(180, 0.30 * data_range)
 top_pad = 0.05 * data_range
@@ -281,10 +284,11 @@ ax2.set_ylim(data_min - bottom_pad, data_max + top_pad)
 # remove all axes — clean like the reference
 ax2.axis('off')
 
-# scale bars: 100 µV vertical, 1 s horizontal in lower-right corner
+# scale bars: 100 µV vertical, 1 s horizontal just after signal end
 ylims = ax2.get_ylim()
-sb_x = duration - 0.45
+sb_x = single_end + 0.95
 sb_y = ylims[0] + 45
+ax2.set_xlim(0, sb_x + 0.32)
 # vertical bar
 ax2.plot([sb_x, sb_x], [sb_y, sb_y + 100], 'k-', lw=2)
 ax2.text(sb_x + 0.10, sb_y + 50, '100 µV', va='center', ha='left',
