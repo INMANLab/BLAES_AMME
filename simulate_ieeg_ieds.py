@@ -247,6 +247,8 @@ ax.set_title('Simulated iEEG  |  BP 0.5–200 Hz  •  Notch 60/120/180 Hz\n'
              '(red = > 3 SD)',
              fontsize=11)
 ax.set_xlim(0, duration)
+ax.set_xticks([0, 1, 3, 5, 7, 9, 10])
+ax.set_xticklabels(['', '-2', '0', '2', '4', '6', ''])
 ax.spines['top'].set_visible(False)
 ax.spines['right'].set_visible(False)
 
