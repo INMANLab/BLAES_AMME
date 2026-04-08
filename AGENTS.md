@@ -8,6 +8,8 @@ All outputs should go to outputs/ folder. Never write anywhere else
 Never install libraries. Only use the existing python environment
 
 # Version Control
+This repo has no remote — commits are local checkpoints only. Do not attempt `git push`.
+
 After each time you update a script:
 
 1. Run `git add .`
