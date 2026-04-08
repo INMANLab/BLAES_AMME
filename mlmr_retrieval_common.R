@@ -263,8 +263,12 @@ display_coef_table <- function(df) {
 }
 
 extract_model_compare_table <- function(model_list) {
-  comp <- as.data.frame(anova(model_list$m0, model_list$m1, model_list$m2, model_list$m3, model_list$m4, model_list$m_full))
-  comp$Model <- c("m0", "m1", "m2", "m3", "m4", "m_full")
+  # Build anova call dynamically based on available models
+  ordered_names <- c("m0", "m1", "m2", "m3", "m4", "m_full")
+  available <- ordered_names[ordered_names %in% names(model_list)]
+  available_models <- unname(model_list[available])
+  comp <- as.data.frame(do.call(anova, available_models))
+  comp$Model <- available
   rownames(comp) <- NULL
 
   p_col <- grep("^Pr", names(comp), value = TRUE)
@@ -781,9 +785,12 @@ analyze_region_level <- function(region_name, region_data, measure_name, level_s
   )
 }
 
-run_mlmr_analysis <- function(measure_name, input_csv, output_dir, phase_name = "Retrieval") {
+run_mlmr_analysis <- function(measure_name, input_csv, output_dir, phase_name = "Retrieval", region_filter = NULL) {
   ensure_dir(output_dir)
   datmodel <- prepare_model_data(input_csv)
+  if (!is.null(region_filter)) {
+    datmodel <- region_filter(datmodel)
+  }
   write_overview_outputs(datmodel, measure_name, output_dir, phase_name)
   regions <- sort(unique(datmodel$Region))
 

@@ -1711,6 +1711,132 @@ def plot_connected_dots(data, out_dir, label, show_patients=True):
             finalize_figure()
 
 
+CORE_SINGLE_REGIONS = {'BLA', 'CA', 'DG', 'EC', 'HPC', 'PRC'}
+
+CORE_ROI_COLORS = {
+    'BLA': 'teal', 'CA': 'black', 'DG': 'skyblue',
+    'EC': '#8A2BE2', 'HPC': 'orange', 'PRC': '#E61C59',
+}
+
+
+def _is_core_pair(roi):
+    """Return True if *roi* is a pair where both parts are core regions."""
+    parts = [p.strip() for p in str(roi).split('_') if p.strip()]
+    return len(parts) == 2 and all(p in CORE_SINGLE_REGIONS for p in parts)
+
+
+def plot_coherence_by_roi_core(data, out_dir, label):
+    """1/f spectral plot limited to pairs of BLA, CA, DG, EC, HPC, PRC."""
+    gap = get_overall_power_for_plot(data)
+    freqs = data['freqs_post']
+    if not gap or freqs is None:
+        return
+    core_rois = sorted(roi for roi in gap if _is_core_pair(roi))
+    if not core_rois:
+        return
+    roi_colors = make_roi_color_map(core_rois)
+    fig, ax = plt.subplots(figsize=(12, 8))
+    for roi in core_rois:
+        mat = np.array(list(gap[roi].values()), dtype=np.float64)
+        mean, std = mat.mean(0), mat.std(0)
+        c = roi_colors[roi]
+        ax.plot(freqs, mean, color=c, label=f'{roi} ({mat.shape[0]})')
+        ax.fill_between(freqs, mean - std, mean + std, alpha=0.2, color=c)
+    ax.set_xlabel('Frequency (Hz)', fontsize=18, fontweight='bold')
+    ax.set_ylabel('Coherency (dB)', fontsize=18, fontweight='bold')
+    ax.set_title(f'{label} Retrieval Group Coherency by ROI (Core Regions)', fontsize=20, fontweight='bold')
+    ax.tick_params(axis='both', labelsize=14)
+    ax.legend(bbox_to_anchor=(1.02, 0.5), loc='center left', prop={'weight': 'bold', 'size': 12})
+    plt.tight_layout(rect=[0, 0, 0.85, 1])
+    plt.savefig(os.path.join(out_dir, 'GroupCoherency_byROI_retrieval_core_regions.png'), dpi=300, bbox_inches='tight')
+    finalize_figure()
+
+
+def plot_freq_x_memory_coherence_bargraph(data, out_dir, label):
+    """Frequency x Memory (Coherence) bar graph: theta & gamma side-by-side, remembered vs forgotten strips."""
+    freqs = data['freqs_diff']
+    if freqs is None:
+        return
+    mem_pairs = [
+        ('Remembered', data.get('bc_stim_rem', {}), data.get('bc_nostim_rem', {})),
+        ('Forgotten', data.get('bc_stim_forg', {}), data.get('bc_nostim_forg', {})),
+    ]
+    all_rows = []
+    for mem_label, sd, nd in mem_pairs:
+        df_diff = compute_diff_df(sd, nd, freqs, POWER_RANGES)
+        if not df_diff.empty:
+            df_diff['memory_cond'] = mem_label
+            all_rows.append(df_diff)
+    if not all_rows:
+        return
+    df_all = pd.concat(all_rows, ignore_index=True)
+    df_all = df_all[df_all['Region'].apply(_is_core_pair)]
+    if df_all.empty:
+        return
+
+    roi_order = sorted(df_all['Region'].unique())
+    band_order = [b for b in POWER_RANGES if b in df_all['power_range'].unique()]
+    if not band_order:
+        return
+
+    n_rois = len(roi_order)
+    bar_width = 0.35
+    x = np.arange(n_rois)
+    band_colors = {'Theta': '#4C72B0', 'Slow gamma': '#DD8452'}
+
+    fig, ax = plt.subplots(figsize=(max(11.5, n_rois * 1.2), 8.2))
+    for i, band in enumerate(band_order):
+        band_df = df_all[df_all['power_range'] == band]
+        means = []
+        sems = []
+        for roi in roi_order:
+            roi_vals = band_df[band_df['Region'] == roi]['mean_power_diff']
+            means.append(roi_vals.mean() if len(roi_vals) else 0)
+            sems.append(roi_vals.sem() if len(roi_vals) > 1 else 0)
+        offset = (i - (len(band_order) - 1) / 2) * bar_width
+        ax.bar(x + offset, means, bar_width, yerr=sems, capsize=4,
+               color=band_colors.get(band, 'gray'), label=band, alpha=0.85,
+               edgecolor='black', linewidth=0.5)
+
+        # Strip plots: remembered = black filled 'o', forgotten = light gray dotted outline 'o'
+        for mem_label, fc, ec, ls, alpha in [
+            ('Remembered', 'black', 'black', '-', 0.7),
+            ('Forgotten', 'white', 'black', '-', 0.9),
+        ]:
+            sub = band_df[band_df['memory_cond'] == mem_label]
+            for j, roi in enumerate(roi_order):
+                pts = sub[sub['Region'] == roi]['mean_power_diff']
+                if pts.empty:
+                    continue
+                jitter = np.random.default_rng(42).uniform(-bar_width * 0.3, bar_width * 0.3, len(pts))
+                ax.scatter(
+                    x[j] + offset + jitter, pts, marker='o', s=30,
+                    facecolors=fc, edgecolors=ec, linewidths=1.2,
+                    linestyle=ls, zorder=5, alpha=alpha,
+                )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(roi_order, fontsize=12, fontweight='bold', rotation=45, ha='right')
+    ax.set_ylabel('Coherency Diff (Stim − No Stim)', fontsize=16, fontweight='bold')
+    ax.tick_params(axis='y', labelsize=14)
+    ax.axhline(0, color='grey', linewidth=0.8)
+
+    # Build legend
+    band_handles = [plt.Rectangle((0, 0), 1, 1, fc=band_colors.get(b, 'gray'), ec='black', lw=0.5) for b in band_order]
+    mem_handles = [
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='black', markeredgecolor='black', markersize=7, label='Remembered'),
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='white', markeredgecolor='black', markeredgewidth=1.2, markersize=7, label='Forgotten'),
+    ]
+    ax.legend(handles=band_handles + mem_handles, labels=band_order + ['Remembered', 'Forgotten'],
+              loc='best', fontsize=11, framealpha=0.9)
+
+    fig.suptitle(f'{label} Retrieval Frequency × Memory (Coherence) Bar Graphs',
+                 fontsize=20, fontweight='bold', y=0.98)
+    fig.tight_layout(rect=[0, 0, 1, 0.93])
+    plt.savefig(os.path.join(out_dir, 'Frequency_x_Memory_Coherence_bargraph.png'), dpi=300, bbox_inches='tight')
+    finalize_figure(fig)
+
+
 # =========================================================================
 #  MAIN
 # =========================================================================
@@ -1719,6 +1845,7 @@ def generate_common_plots(data, out_dir, label):
     ensure_dir(out_dir)
     print(f"\n  Generating common plots for {label}...")
     plot_power_by_roi(data, out_dir, label)
+    plot_coherence_by_roi_core(data, out_dir, label)
     plot_power_by_patient(data, out_dir, label)
     plot_stim_vs_nostim(data, out_dir, label)
     plot_per_roi_patient_stim_nostim(data, out_dir, label)
@@ -1738,6 +1865,7 @@ def generate_memory_plots(data, out_dir, label):
     plot_bc_remembered_forgotten(data, out_dir, label)
     plot_connected_dots(data, out_dir, label)
     plot_connected_dots(data, out_dir, label, show_patients=False)
+    plot_freq_x_memory_coherence_bargraph(data, out_dir, label)
 
 
 def write_bla_composite_logic_note(out_dir):

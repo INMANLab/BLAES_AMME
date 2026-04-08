@@ -176,6 +176,22 @@ for (reg in regions) {
       save_tidy(m, sprintf("pow_SP_%s_%s_odds_ratios.csv", reg, b))
     }
   }
+
+  # Part 2d: Focused model - only during-stim + after-image windows + stim
+  for (i in seq_along(bands)) {
+    b <- bands[i]; bl <- band_labels[i]; zcol <- paste0("pow_", b, "_z")
+
+    cat(sprintf("\n  MODEL TF_%s_%s: %s + During-Stim + After-Image + Stim\n", reg, b, bl))
+    m <- tryCatch({
+      glmer(as.formula(paste0(
+        "memory ~ ", zcol, " + ied_during_stim + ied_after_image + stim + (1 | patient_id)"
+      )), data = sub, family = binomial, control = ctrl)
+    }, error = function(e) { cat("    Failed:", conditionMessage(e), "\n"); NULL })
+    if (!is.null(m)) {
+      print(summary(m))
+      save_tidy(m, sprintf("pow_TF_%s_%s_odds_ratios.csv", reg, b))
+    }
+  }
 }
 
 cat("\n\n===== ALL DONE =====\n")

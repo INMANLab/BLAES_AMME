@@ -1,0 +1,112 @@
+ROOT CAUSE ANALYSIS: Trial Count Differences Between Power and Coherence
+
+KEY FINDINGS:
+=============
+
+1. DIFFERENT DATA STRUCTURES
+   - Power CSV: Uses SINGLE regions (BLA, CA, EC, HPC, PRC, DG)
+   - Coherence CSV: Uses REGION PAIRS (BLA_CA, BLA_EC, CA_HPC, etc.)
+   
+   This is STRUCTURAL, not a filtering issue. Coherence requires TWO recording 
+   sites per trial, power only requires ONE.
+
+2. SUBJECT INCLUSION DIFFERS DUE TO REGION AVAILABILITY
+   
+   Example: BJH040
+   - Power Encoding: Has CA region data (n=40 nostim trials: 38 rem, 2 forg)
+   - Coherence Encoding: Has ZERO trials
+   - Reason: BJH040 only has CA recordings. For coherence pair regions (CA_BLA, 
+             CA_DG, etc.), the OTHER site must also be available. Apparently 
+             BJH040 lacks BLA, DG, EC, HPC, or PRC recordings.
+   
+   Same pattern for BJH046, SLCH018
+
+3. TRIAL COUNT DIFFERENCES FOR SAME SUBJECTS
+   
+   When subjects appear in BOTH power and coherence CSVs, the TRIAL COUNTS 
+   THEMSELVES DIFFER. Examples:
+   
+   Subject    | Power        | Coherence    | Ratio
+   -----------+--------------+--------------+----------
+   BJH017     | rem=110      | rem=198      | 1.8x more coherence trials
+   BJH024     | rem=130      | rem=104      | 0.8x fewer coherence trials
+   BJH027     | rem=175      | rem=315      | 1.8x more coherence trials
+   UIC202306  | rem=64       | rem=32       | 0.5x fewer coherence trials
+   
+   This MULTIPLICITY happens because:
+   - Power: Each trial represented ONCE per region
+   - Coherence: Each trial appears in MULTIPLE region pairs
+   
+   For example, a single encoding trial might appear in:
+   - Power: one row for the BLA electrode
+   - Coherence: 4 rows (BLA_CA, BLA_EC, BLA_HPC, BLA_PRC) if the subject has all 
+               four region pairs
+
+4. SUBJECT-SPECIFIC REGION PAIR AVAILABILITY
+   
+   Subject BJH017:
+   - Regions in Power: BLA, CA, EC, HPC, PRC (5 regions)
+   - Possible pairs: BLA_CA, BLA_EC, BLA_HPC, BLA_PRC, CA_EC, CA_PRC, 
+                     EC_HPC, EC_PRC, HPC_PRC = 9 pairs
+   - Coherence shows 9 pairs, each with same trial counts (rem=22, forg=18)
+   - Total coherence trials: 200 power trials × 9/5 pairs = 360 trials
+   
+   Subject BJH024:
+   - Regions in Power: CA, DG, HPC (3 regions)
+   - Possible pairs with 3 regions: CA_DG, CA_HPC, DG_HPC = 3 pairs
+   - But coherence shows only 2 pairs (CA_DG, CA_HPC), not DG_HPC
+   - Total coherence trials: 160 power trials in CA/DG/HPC, but only 104 appear 
+     in coherence pairs
+   - Suggests either: (a) DG_HPC pair missing, or (b) some trials don't have 
+                      simultaneous recordings for all pairs
+
+5. DEDUPLICATION LOGIC
+   
+   In balanced_memory_trials.py, line 66-67:
+   ```python
+   first_region = df.groupby('Patient')['Region'].first().to_dict()
+   df = df[df.apply(lambda r: r['Region'] == first_region[r['Patient']], axis=1)]
+   ```
+   
+   This selects ONLY THE FIRST REGION per patient. So:
+   - For Power: Takes 1 of the 5 regions → prevents overcounting
+   - For Coherence: Takes 1 of the 9 pairs → but the trial counts have already 
+                    been MULTIPLIED across pairs in the CSV!
+
+6. THE CORE PROBLEM
+   
+   The mlmr_export_frames are built from DIFFERENT granularities:
+   
+   Power (combined_encoding_power.py lines 749-752):
+   - Trial-level export includes one row per trial per region
+   - Multiple regions exist, but regions are independent recordings
+   
+   Coherence (combined_encoding_coherence.py lines 971-987):
+   - Trial-level export includes one row per trial per REGION PAIR
+   - Region pairs represent relationships between recording sites
+   - A single trial with simultaneous recordings from 5 regions appears in 
+     9 different pairs (in the CSV), but represents the same underlying trial
+   
+   Because the deduplication (line 66-67 of balanced_memory_trials.py) only 
+   filters by .first() region per patient, it doesn't account for the fact 
+   that coherence trials are pre-multiplied by the number of region pairs.
+
+CONCLUSION:
+===========
+The trial count differences are NOT due to different subjects being present 
+(though that's also true). The differences arise because:
+
+1. Power and Coherence CSVs use different data units:
+   - Power: trials × single regions
+   - Coherence: trials × region pairs
+
+2. When deduplicating by "first region", coherence still has inflated counts 
+   because each trial appears multiple times in different pairs.
+
+3. For subjects with no pair-based data (like BJH040 with only CA), they 
+   disappear entirely from coherence.
+
+This explains why:
+- Coherence has fewer unique subjects (20 vs 23 BLAES)
+- For shared subjects, coherence trial counts differ (and unpredictably—
+  depends on which pairs each subject has)

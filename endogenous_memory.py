@@ -160,6 +160,32 @@ def get_anchor_region(roi_name):
     return str(roi_name).split('_', 1)[0]
 
 
+def filter_pnas_regions(data):
+    """Remove any region/key containing 'PNAS' from a loaded data dict."""
+    filtered = {}
+    for key, value in data.items():
+        if isinstance(value, dict) and value:
+            first_val = next(iter(value.values()), None)
+            if isinstance(first_val, dict):
+                # {region: {subject: vector}} — filter region keys
+                filtered[key] = {
+                    roi: sd for roi, sd in value.items()
+                    if 'PNAS' not in str(roi)
+                }
+            else:
+                filtered[key] = value
+        elif isinstance(value, list) and key == 'mlmr_export_frames':
+            # Filter PNAS rows from DataFrames
+            filtered[key] = [
+                df[~df['Region'].str.contains('PNAS', na=False)].copy()
+                if 'Region' in df.columns else df
+                for df in value
+            ]
+        else:
+            filtered[key] = value
+    return filtered
+
+
 def remove_matching_files(out_dir, prefixes):
     if not os.path.isdir(out_dir):
         return
@@ -860,9 +886,9 @@ def run_power_analysis():
 
     # --- Encoding ---
     print("\n  Loading encoding power data...")
-    blaes_enc = load_blaes_encoding()
-    amme_enc = load_amme_encoding()
-    all_enc = build_all_encoding_data(blaes_enc, amme_enc)
+    blaes_enc = filter_pnas_regions(load_blaes_encoding())
+    amme_enc = filter_pnas_regions(load_amme_encoding())
+    all_enc = filter_pnas_regions(build_all_encoding_data(blaes_enc, amme_enc))
 
     for group_label, data in [('BLAES', blaes_enc), ('AMME', amme_enc), ('All', all_enc)]:
         endo = extract_endogenous(data, measure='power')
@@ -875,9 +901,9 @@ def run_power_analysis():
 
     # --- Retrieval ---
     print("\n  Loading retrieval power data...")
-    blaes_ret = load_blaes_retrieval()
-    amme_ret = load_amme_retrieval()
-    all_ret = build_all_retrieval_data(blaes_ret, amme_ret)
+    blaes_ret = filter_pnas_regions(load_blaes_retrieval())
+    amme_ret = filter_pnas_regions(load_amme_retrieval())
+    all_ret = filter_pnas_regions(build_all_retrieval_data(blaes_ret, amme_ret))
 
     for group_label, data in [('BLAES', blaes_ret), ('AMME', amme_ret), ('All', all_ret)]:
         endo = extract_endogenous(data, measure='power')
@@ -948,9 +974,9 @@ def run_coherence_analysis():
 
     # --- Encoding ---
     print("\n  Loading encoding coherence data...")
-    blaes_enc = load_blaes_encoding_coh()
-    amme_enc = load_amme_encoding_coh()
-    all_enc = _merge_coherence_data(blaes_enc, amme_enc)
+    blaes_enc = filter_pnas_regions(load_blaes_encoding_coh())
+    amme_enc = filter_pnas_regions(load_amme_encoding_coh())
+    all_enc = filter_pnas_regions(_merge_coherence_data(blaes_enc, amme_enc))
 
     for group_label, data in [('BLAES', blaes_enc), ('AMME', amme_enc), ('All', all_enc)]:
         endo = extract_endogenous(data, measure='coherence')
@@ -966,9 +992,9 @@ def run_coherence_analysis():
 
     # --- Retrieval ---
     print("\n  Loading retrieval coherence data...")
-    blaes_ret = load_blaes_retrieval_coh()
-    amme_ret = load_amme_retrieval_coh()
-    all_ret = _merge_coherence_data(blaes_ret, amme_ret)
+    blaes_ret = filter_pnas_regions(load_blaes_retrieval_coh())
+    amme_ret = filter_pnas_regions(load_amme_retrieval_coh())
+    all_ret = filter_pnas_regions(_merge_coherence_data(blaes_ret, amme_ret))
 
     for group_label, data in [('BLAES', blaes_ret), ('AMME', amme_ret), ('All', all_ret)]:
         endo = extract_endogenous(data, measure='coherence')

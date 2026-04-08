@@ -3,7 +3,9 @@ source("mlmr_retrieval_common.R")
 BAND_SPECS <- list(
   theta = list(column = "theta", centered = "theta_c", label = "Theta (4-8Hz)", short = "theta c", slug = "theta"),
   slow_gamma = list(column = "slow_gamma", centered = "slow_gamma_c", label = "Slow gamma (30-55Hz)", short = "slow gamma c", slug = "slow_gamma"),
-  fast_gamma = list(column = "fast_gamma", centered = "fast_gamma_c", label = "HFA (55-100Hz)", short = "fast gamma c", slug = "fast_gamma")
+  fast_gamma = list(column = "fast_gamma", centered = "fast_gamma_c", label = "HFA (55-100Hz)", short = "fast gamma c", slug = "fast_gamma"),
+  slow_gamma_pac = list(column = "slow_gamma_pac", centered = "slow_gamma_pac_c", label = "Theta Phase x Slow Gamma Amp (30-50Hz)", short = "Slow Gamma PAC", slug = "slow_gamma_pac"),
+  hfa_pac = list(column = "hfa_pac", centered = "hfa_pac_c", label = "Theta Phase x HFA Amp (55-100Hz)", short = "HFA PAC", slug = "hfa_pac")
 )
 
 label_band_region_term <- function(term, band_key) {
@@ -68,7 +70,11 @@ extract_band_region_coef_table <- function(model, band_key, logistic = FALSE) {
 
 prepare_band_analysis_data <- function(datmodel, band_key, level_slug) {
   spec <- BAND_SPECS[[band_key]]
+  if (!(spec$column %in% names(datmodel))) return(data.frame())
+  if (!(spec$centered %in% names(datmodel))) return(data.frame())
+
   dat <- if (identical(level_slug, "trial_level")) datmodel else build_patient_level_data(datmodel)
+  if (!(spec$column %in% names(dat))) return(data.frame())
 
   dat %>%
     mutate(
