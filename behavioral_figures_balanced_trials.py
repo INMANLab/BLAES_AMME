@@ -38,9 +38,9 @@ RESPONDER_PALETTE = {
     'Non-responders': '#F04646',
     'Anti-responders': '#F79B62',
 }
-SWARM_TITLE_Y = 0.975
-SWARM_STATS_Y = 0.905
-SWARM_TOP = 0.80
+SWARM_TITLE_Y = 0.985
+SWARM_STATS_Y = 0.855
+SWARM_TOP = 0.74
 
 
 def load_behavior_csv() -> pd.DataFrame:
@@ -217,15 +217,15 @@ def plot_connected_dotplot(df: pd.DataFrame) -> None:
         f'AMME & BLAES stim vs. nostim dprime at one-day delay\nBalanced-trials subjects (N={len(valid)})',
         fontsize=18,
         fontweight='normal',
-        y=0.975,
+        y=0.985,
     )
-    fig.text(0.5, 0.905, f't = {t_stat:.3f}\np = {p_value:.3f}', ha='center', va='center', fontsize=14)
+    fig.text(0.5, 0.845, f't = {t_stat:.3f}\np = {p_value:.3f}', ha='center', va='center', fontsize=14)
     ax.set_xticks([0, 1])
     ax.set_xticklabels(['nostim', 'stim'], fontsize=20, fontweight='bold')
     ax.tick_params(axis='y', labelsize=15)
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
-    fig.subplots_adjust(top=0.82)
+    fig.subplots_adjust(top=0.73)
     fig.savefig(
         OUTPUT_DIR / 'AMME_BLAES_Stim_NoStim_connected_dotplot_balanced_trials.png',
         dpi=300,
