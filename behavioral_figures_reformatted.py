@@ -12,7 +12,7 @@ from matplotlib.lines import Line2D
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from scipy.stats import ttest_ind, ttest_rel
+from scipy.stats import pearsonr, ttest_ind, ttest_rel
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -300,6 +300,8 @@ def plot_age_swarm(df: pd.DataFrame) -> None:
         else:
             legend_labels[group] = group
 
+    r_value, p_value = pearsonr(plot_df['age'], plot_df['avg_stim_dprime_diff'])
+
     make_swarm(
         plot_df,
         hue='age_group',
@@ -310,6 +312,7 @@ def plot_age_swarm(df: pd.DataFrame) -> None:
         legend_title='Age group',
         legend_labels=legend_labels,
         legend_anchor=(1.28, 0.75),
+        stats_text=f'r = {r_value:.3f}, p = {p_value:.3f}',
     )
 
 
