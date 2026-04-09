@@ -29,6 +29,7 @@ if not IN_NOTEBOOK:
     matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
+from textwrap import fill
 
 warnings.filterwarnings('ignore')
 
@@ -36,6 +37,18 @@ def get_script_dir():
     if '__file__' in globals():
         return os.path.dirname(os.path.abspath(__file__))
     return os.getcwd()
+
+
+def add_method_caption(fig, text, y=0.012, fontsize=9, width=150):
+    fig.text(
+        0.5,
+        y,
+        fill(text, width=width),
+        ha='center',
+        va='bottom',
+        fontsize=fontsize,
+        color='dimgray',
+    )
 
 
 SCRIPT_DIR = get_script_dir()
@@ -1597,7 +1610,7 @@ def plot_power_by_roi_core(data, out_dir, label):
 
 
 def plot_freq_x_memory_power_bargraph(data, out_dir, label):
-    """Frequency x Memory (Power) bar graph: theta, gamma, HFA side-by-side, remembered vs forgotten strips."""
+    """Frequency x Memory (Power) boxplots separated by band with remembered/forgotten strips."""
     freqs = data['freqs_diff']
     if freqs is None:
         return
@@ -1630,59 +1643,96 @@ def plot_freq_x_memory_power_bargraph(data, out_dir, label):
     if not band_order:
         return
 
-    n_rois = len(roi_order)
-    n_bands = len(band_order)
-    bar_width = 0.25
-    x = np.arange(n_rois)
     band_colors = {'Theta': '#4C72B0', 'Slow gamma': '#DD8452', 'HFA': '#55A868'}
+    memory_styles = {
+        'Remembered': {'facecolor': 'black', 'edgecolor': 'black', 'alpha': 0.7},
+        'Forgotten': {'facecolor': 'white', 'edgecolor': 'black', 'alpha': 0.9},
+    }
 
-    fig, ax = plt.subplots(figsize=(max(11.5, n_rois * 1.8), 8.2))
-    for i, band in enumerate(band_order):
+    fig, axes = plt.subplots(
+        1,
+        len(band_order),
+        figsize=(max(13.5, len(roi_order) * 2.1 * len(band_order)), 8.2),
+        sharey=True,
+    )
+    if len(band_order) == 1:
+        axes = [axes]
+    rng = np.random.default_rng(42)
+
+    for ax, band in zip(axes, band_order):
         band_df = df_all[df_all['power_range'] == band]
-        means = []
-        sems = []
-        for roi in roi_order:
-            roi_vals = band_df[band_df['Region'] == roi]['mean_power_diff']
-            means.append(roi_vals.mean() if len(roi_vals) else 0)
-            sems.append(roi_vals.sem() if len(roi_vals) > 1 else 0)
-        offset = (i - (n_bands - 1) / 2) * bar_width
-        ax.bar(x + offset, means, bar_width, yerr=sems, capsize=4,
-               color=band_colors.get(band, 'gray'), label=band, alpha=0.85,
-               edgecolor='black', linewidth=0.5)
+        if band_df.empty:
+            continue
+        x = np.arange(len(roi_order))
 
-        for mem_label, fc, ec, alpha in [
-            ('Remembered', 'black', 'black', 0.7),
-            ('Forgotten', 'white', 'black', 0.9),
-        ]:
+        for mem_label, style in memory_styles.items():
             sub = band_df[band_df['memory_cond'] == mem_label]
             for j, roi in enumerate(roi_order):
                 pts = sub[sub['Region'] == roi]['mean_power_diff']
                 if pts.empty:
                     continue
-                jitter = np.random.default_rng(42).uniform(-bar_width * 0.3, bar_width * 0.3, len(pts))
+                jitter = rng.uniform(-0.14, 0.14, len(pts))
                 ax.scatter(
-                    x[j] + offset + jitter, pts, marker='o', s=30,
-                    facecolors=fc, edgecolors=ec, linewidths=1.2,
-                    zorder=5, alpha=alpha,
+                    np.full(len(pts), x[j]) + jitter,
+                    pts,
+                    marker='o',
+                    s=34,
+                    facecolors=style['facecolor'],
+                    edgecolors=style['edgecolor'],
+                    linewidths=1.2,
+                    zorder=2,
+                    alpha=style['alpha'],
                 )
 
-    ax.set_xticks(x)
-    ax.set_xticklabels(roi_order, fontsize=14, fontweight='bold')
-    ax.set_ylabel('Power Diff (Stim − No Stim)', fontsize=16, fontweight='bold')
-    ax.tick_params(axis='y', labelsize=14)
-    ax.axhline(0, color='grey', linewidth=0.8)
+        grouped = [
+            band_df[band_df['Region'] == roi]['mean_power_diff'].to_numpy()
+            for roi in roi_order
+            if not band_df[band_df['Region'] == roi].empty
+        ]
+        present_rois = [roi for roi in roi_order if not band_df[band_df['Region'] == roi].empty]
+        present_positions = [roi_order.index(roi) for roi in present_rois]
+        if grouped:
+            bp = ax.boxplot(
+                grouped,
+                positions=present_positions,
+                widths=0.42,
+                patch_artist=True,
+                showfliers=False,
+                medianprops={'color': 'black', 'linewidth': 2.0, 'zorder': 5},
+                whiskerprops={'color': 'black', 'linewidth': 1.4, 'zorder': 4},
+                capprops={'color': 'black', 'linewidth': 1.4, 'zorder': 4},
+                boxprops={'edgecolor': 'black', 'linewidth': 1.5, 'zorder': 4},
+            )
+            for box in bp['boxes']:
+                box.set_facecolor(band_colors.get(band, 'gray'))
+                box.set_alpha(0.78)
+                box.set_zorder(4)
 
-    band_handles = [plt.Rectangle((0, 0), 1, 1, fc=band_colors.get(b, 'gray'), ec='black', lw=0.5) for b in band_order]
+        ax.set_xticks(x)
+        ax.set_xticklabels(roi_order, fontsize=14, fontweight='bold')
+        ax.tick_params(axis='y', labelsize=14)
+        ax.axhline(0, color='grey', linewidth=0.8, zorder=1)
+        ax.set_title(band, fontsize=17, fontweight='bold')
+
+    axes[0].set_ylabel('Power Diff (Stim − No Stim)', fontsize=16, fontweight='bold')
+
     mem_handles = [
         Line2D([0], [0], marker='o', color='w', markerfacecolor='black', markeredgecolor='black', markersize=7, label='Remembered'),
         Line2D([0], [0], marker='o', color='w', markerfacecolor='white', markeredgecolor='black', markeredgewidth=1.2, markersize=7, label='Forgotten'),
     ]
-    ax.legend(handles=band_handles + mem_handles, labels=band_order + ['Remembered', 'Forgotten'],
-              loc='lower right', fontsize=11, framealpha=0.9)
+    fig.legend(handles=mem_handles, labels=['Remembered', 'Forgotten'],
+               loc='upper right', bbox_to_anchor=(0.98, 0.86), fontsize=11, framealpha=0.9)
 
-    fig.suptitle(f'{label} Encoding Frequency × Memory (Power) Bar Graphs',
+    fig.suptitle(f'{label} Encoding Frequency × Memory (Power) Boxplots',
                  fontsize=20, fontweight='bold', y=0.98)
-    fig.tight_layout(rect=[0, 0, 1, 0.93])
+    add_method_caption(
+        fig,
+        'Method: For each patient and ROI, band diff = Stim−NoStim. Panels separate theta, slow gamma, and HFA. '
+        'Boxes summarize the across-patient distribution within each ROI. '
+        'Black circles = remembered trials, light gray-outline circles = forgotten trials. '
+        'Core regions only (BLA, CA, DG, EC, HPC, PRC).',
+    )
+    fig.tight_layout(rect=[0, 0.05, 1, 0.93])
     plt.savefig(os.path.join(out_dir, 'Frequency_x_Memory_Power_bargraph.png'), dpi=300, bbox_inches='tight')
     finalize_figure(fig)
 
