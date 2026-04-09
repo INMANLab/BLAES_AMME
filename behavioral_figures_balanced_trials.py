@@ -13,7 +13,7 @@ from matplotlib.lines import Line2D
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from scipy.stats import ttest_ind, ttest_rel
+from scipy.stats import pearsonr, ttest_ind, ttest_rel
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -430,6 +430,81 @@ def plot_sex_swarm(df: pd.DataFrame) -> None:
     )
 
 
+def plot_age_swarm(df: pd.DataFrame) -> None:
+    plot_df = df.copy()
+    plot_df['age'] = pd.to_numeric(plot_df['age'], errors='coerce')
+    plot_df = plot_df[plot_df['avg_stim_dprime_diff'].notna()].copy()
+
+    age_clean = plot_df['age'].dropna()
+    age_mean = age_clean.mean()
+    age_std = age_clean.std()
+    lower_bound = age_mean - 0.5 * age_std
+    upper_bound = age_mean + 0.5 * age_std
+
+    def assign_age_group(age):
+        if pd.isna(age):
+            return np.nan
+        if age <= lower_bound:
+            return 'Youngest'
+        if age <= age_mean:
+            return 'Younger-middle'
+        if age <= upper_bound:
+            return 'Older-middle'
+        return 'Oldest'
+
+    plot_df['age_group'] = plot_df['age'].apply(assign_age_group)
+    plot_df = plot_df.dropna(subset=['age_group', 'age']).copy()
+    plot_df['delay_group'] = 'One-day delay'
+
+    hue_order = ['Youngest', 'Younger-middle', 'Older-middle', 'Oldest']
+    palette = {
+        'Youngest': '#C6DBEF',
+        'Younger-middle': '#6BAED6',
+        'Older-middle': '#2171B5',
+        'Oldest': '#08306B',
+    }
+
+    age_ranges = plot_df.groupby('age_group')['age'].agg(['min', 'max'])
+    legend_labels = {}
+    for group in hue_order:
+        if group in age_ranges.index:
+            min_age = int(np.floor(age_ranges.loc[group, 'min']))
+            max_age = int(np.ceil(age_ranges.loc[group, 'max']))
+            legend_labels[group] = f'{group} [{min_age}-{max_age}]'
+        else:
+            legend_labels[group] = group
+
+    r_value, p_value = pearsonr(plot_df['age'], plot_df['avg_stim_dprime_diff'])
+
+    grid = sns.catplot(
+        x='delay_group',
+        y='avg_stim_dprime_diff',
+        hue='age_group',
+        hue_order=hue_order,
+        data=plot_df,
+        kind='swarm',
+        s=180,
+        palette=palette,
+        height=10,
+        aspect=0.55,
+    )
+    grid.ax.set_ylabel('Dprime difference (stimulated - not stimulated)', fontsize=20)
+    grid.ax.set_title('')
+    grid.fig.suptitle(
+        f'AMME & BLAES dprime difference by age group at one-day delay\nBalanced-trials subjects (N={len(plot_df)})',
+        fontsize=20,
+        y=SWARM_TITLE_Y,
+    )
+    finalize_swarm_plot(
+        grid,
+        OUTPUT_DIR / 'AMMEBLAES_age_group_swarmplot_balanced_trials.png',
+        legend_title='Age group',
+        legend_labels=legend_labels,
+        legend_anchor=(1.30, 0.75),
+        stats_text=f'r = {r_value:.3f}, p = {p_value:.3f}',
+    )
+
+
 def plot_hemisphere_swarm(df: pd.DataFrame) -> None:
     plot_df = df.copy()
     plot_df['stim_hemisphere'] = plot_df['stim_hemisphere'].astype(str).str.strip().str.upper()
@@ -572,6 +647,7 @@ def main() -> None:
     plot_connected_dotplot(balanced_df)
     plot_responder_swarm(balanced_df)
     plot_sex_swarm(balanced_df)
+    plot_age_swarm(balanced_df)
     plot_hemisphere_swarm(balanced_df)
     plot_stim_intensity_swarm(balanced_df)
     plot_ied_frequency_swarm(balanced_df)
