@@ -70,7 +70,7 @@ def build_summary_rows(df: pd.DataFrame, dataset_label: str) -> list[dict]:
 
 
 def plot_sex_subfigures(df: pd.DataFrame, dataset_label: str, out_name: str) -> list[dict]:
-    fig, axes = plt.subplots(1, 2, figsize=(11.5, 7.2), sharey=True)
+    fig, axes = plt.subplots(1, 2, figsize=(11.8, 7.8), sharey=True)
     summary_rows = []
 
     for ax, sex in zip(axes, SEX_ORDER):
@@ -90,19 +90,23 @@ def plot_sex_subfigures(df: pd.DataFrame, dataset_label: str, out_name: str) -> 
             ax.scatter(1, row['avg_stim'], color=POINT_COLORS['stim'], s=72, zorder=3)
 
         ax.set_title(
-            f"{SEX_TITLES[sex]} (N={len(sub)})\n"
-            f"mean nostim={sub['nostim'].mean():.2f}, mean stim={sub['avg_stim'].mean():.2f}",
-            fontsize=14,
-            pad=12,
+            f"{SEX_TITLES[sex]} (N={len(sub)})",
+            fontsize=16,
+            pad=34,
         )
         ax.text(
             0.5,
-            0.90,
-            f"t = {t_stat:.3f}\np = {p_val:.3f}\nΔ stim-nostim = {(sub['avg_stim'] - sub['nostim']).mean():.3f}",
+            1.01,
+            (
+                f"mean nostim = {sub['nostim'].mean():.2f}, mean stim = {sub['avg_stim'].mean():.2f}\n"
+                f"t = {t_stat:.3f}, p = {p_val:.3f}, Δ stim-nostim = {(sub['avg_stim'] - sub['nostim']).mean():.3f}"
+            ),
             transform=ax.transAxes,
             ha='center',
-            va='top',
+            va='bottom',
             fontsize=11,
+            clip_on=False,
+            bbox=dict(boxstyle='round,pad=0.35', facecolor='white', edgecolor='0.75', alpha=0.95),
         )
         ax.set_xticks([0, 1])
         ax.set_xticklabels(['nostim', 'stim'], fontsize=14, fontweight='bold')
@@ -116,7 +120,7 @@ def plot_sex_subfigures(df: pd.DataFrame, dataset_label: str, out_name: str) -> 
         fontsize=18,
         y=0.985,
     )
-    fig.subplots_adjust(top=0.76, wspace=0.20, bottom=0.10)
+    fig.subplots_adjust(top=0.72, wspace=0.20, bottom=0.10)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     fig.savefig(OUTPUT_DIR / out_name, dpi=300, bbox_inches='tight', pad_inches=0.35)
     plt.close(fig)
