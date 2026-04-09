@@ -153,7 +153,10 @@ def build_manual_log_counts() -> pd.DataFrame:
 
 
 def apply_balanced_filter(behavior_df: pd.DataFrame, counts_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    count_cols = ['Patient', 'Subject', 'Remembered', 'Forgotten', 'balanced_keep']
+    count_cols = [
+        'Patient', 'Subject', 'Remembered', 'Forgotten', 'ValidOldTrials',
+        'DroppedMissingInfo', 'LogPath', 'count_source', 'balanced_keep',
+    ]
     merged = behavior_df.merge(counts_df[count_cols], on='Patient', how='left')
 
     merged['count_status'] = np.where(
