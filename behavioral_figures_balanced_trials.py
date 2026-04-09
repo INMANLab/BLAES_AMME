@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from io import StringIO
 from pathlib import Path
 
 import matplotlib
@@ -21,6 +22,7 @@ COUNTS_CSV = SCRIPT_DIR / 'outputs' / 'remembered_forgotten_by_subject.csv'
 SUBSET_CSV = OUTPUT_DIR / 'balanced_behavioral_subjects.csv'
 SUMMARY_TXT = OUTPUT_DIR / 'balanced_behavioral_subjects_summary.txt'
 RESPONDER_CSV = OUTPUT_DIR / 'balanced_responder_status.csv'
+MANUAL_COUNTS_CSV = OUTPUT_DIR / 'manual_subject_trial_counts_from_logs.csv'
 
 MIN_TRIALS_PER_CONDITION = 10
 BALANCED_ALIAS_MAP = {'BJH032': 'BJH033'}
@@ -41,6 +43,17 @@ RESPONDER_PALETTE = {
 SWARM_TITLE_Y = 0.985
 SWARM_STATS_Y = 0.855
 SWARM_TOP = 0.74
+
+MANUAL_COUNT_LOGS = {
+    'amyg001': Path('/Users/martinahollearn/Library/CloudStorage/Box-Box/InmanLab/AMME_Data_Emory/AMME_Data/amyg001/amyg001_day2.log'),
+    'amyg002': Path('/Users/martinahollearn/Library/CloudStorage/Box-Box/InmanLab/AMME_Data_Emory/AMME_Data/amyg002/amyg002_day2.log'),
+    'amyg015': Path('/Users/martinahollearn/Library/CloudStorage/Box-Box/InmanLab/AMME_Data_Emory/AMME_Data/amyg015/amyg015_day2.log'),
+    'amyg016': Path('/Users/martinahollearn/Library/CloudStorage/Box-Box/InmanLab/AMME_Data_Emory/AMME_Data/amyg016/amyg016_day2.log'),
+    'amyg042': Path('/Users/martinahollearn/Library/CloudStorage/Box-Box/InmanLab/AMME_Data_Emory/AMME_Data/amyg042/amyg042_Ramyg_day2.log'),
+    'amyg047': Path('/Users/martinahollearn/Library/CloudStorage/Box-Box/InmanLab/AMME_Data_Emory/AMME_Data/amyg047/amyg047_Lamyg_day2.log'),
+    'amyg053': Path('/Users/martinahollearn/Library/CloudStorage/Box-Box/InmanLab/AMME_Data_Emory/AMME_Data/amyg053/amyg053_Ramyg_day2.log'),
+    'amyg060': Path('/Users/martinahollearn/Library/CloudStorage/Box-Box/InmanLab/AMME_Data_Emory/AMME_Data/amyg060/amyg060_Lamyg_day2.log'),
+}
 
 
 def load_behavior_csv() -> pd.DataFrame:
@@ -73,11 +86,70 @@ def load_trial_counts() -> pd.DataFrame:
     counts['Patient'] = counts['Subject'].replace(BALANCED_ALIAS_MAP)
     counts['Remembered'] = pd.to_numeric(counts['Remembered'], errors='coerce')
     counts['Forgotten'] = pd.to_numeric(counts['Forgotten'], errors='coerce')
+    counts['count_source'] = 'existing_subject_count_csv'
+    counts['ValidOldTrials'] = counts['Remembered'] + counts['Forgotten']
+    counts['DroppedMissingInfo'] = np.nan
+    counts['LogPath'] = pd.NA
     counts['balanced_keep'] = (
         (counts['Remembered'] >= MIN_TRIALS_PER_CONDITION) &
         (counts['Forgotten'] >= MIN_TRIALS_PER_CONDITION)
     )
-    return counts
+    manual_counts = build_manual_log_counts()
+    missing_manual = manual_counts[~manual_counts['Patient'].isin(counts['Patient'])].copy()
+    return pd.concat([counts, missing_manual], ignore_index=True, sort=False)
+
+
+def parse_day2_log_counts(log_path: Path) -> dict:
+    if not log_path.exists():
+        raise FileNotFoundError(f'Missing manual day-2 log file: {log_path}')
+
+    lines = log_path.read_text(errors='ignore').splitlines()
+    header_idx = next((i for i, line in enumerate(lines) if line.startswith('TRIAL\t')), None)
+    if header_idx is None:
+        raise ValueError(f'Could not find tabular day-2 header in {log_path}')
+
+    df = pd.read_csv(StringIO('\n'.join(lines[header_idx:])), sep='\t')
+    df.columns = [str(column).strip() for column in df.columns]
+    if 'CONDITION' not in df.columns or 'YES/NO' not in df.columns:
+        raise ValueError(f'Required columns missing in {log_path}')
+
+    df['CONDITION'] = df['CONDITION'].astype(str).str.strip().str.lower()
+    df['YES/NO'] = df['YES/NO'].astype(str).str.strip().str.lower()
+
+    old_trials = df[df['CONDITION'] != 'new'].copy()
+    valid_trials = old_trials[old_trials['YES/NO'].isin(['yes', 'no'])].copy()
+
+    remembered = int((valid_trials['YES/NO'] == 'yes').sum())
+    forgotten = int((valid_trials['YES/NO'] == 'no').sum())
+    dropped_missing = int(len(old_trials) - len(valid_trials))
+
+    return {
+        'Remembered': remembered,
+        'Forgotten': forgotten,
+        'ValidOldTrials': remembered + forgotten,
+        'DroppedMissingInfo': dropped_missing,
+        'LogPath': str(log_path),
+    }
+
+
+def build_manual_log_counts() -> pd.DataFrame:
+    rows = []
+    for patient, log_path in MANUAL_COUNT_LOGS.items():
+        parsed = parse_day2_log_counts(log_path)
+        rows.append({
+            'Subject': patient,
+            'Patient': patient,
+            'count_source': 'manual_day2_log',
+            **parsed,
+        })
+
+    manual_df = pd.DataFrame(rows).sort_values('Patient').reset_index(drop=True)
+    manual_df['balanced_keep'] = (
+        (manual_df['Remembered'] >= MIN_TRIALS_PER_CONDITION) &
+        (manual_df['Forgotten'] >= MIN_TRIALS_PER_CONDITION)
+    )
+    manual_df.to_csv(MANUAL_COUNTS_CSV, index=False)
+    return manual_df
 
 
 def apply_balanced_filter(behavior_df: pd.DataFrame, counts_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -104,14 +176,17 @@ def save_subset_artifacts(full_df: pd.DataFrame, balanced_df: pd.DataFrame) -> N
     export_cols = [
         'Patient', 'Study', 'Memory_delay', 'nostim', 'avg_stim', 'avg_stim_dprime_diff',
         'stim_hemisphere', 'stim_DB', 'IED_freq', 'sex',
-        'Remembered', 'Forgotten', 'count_status',
+        'Remembered', 'Forgotten', 'ValidOldTrials', 'DroppedMissingInfo', 'count_source', 'count_status',
     ]
     balanced_df[export_cols].to_csv(SUBSET_CSV, index=False)
 
     missing_counts = full_df[full_df['count_status'] == 'excluded_missing_counts']['Patient'].tolist()
     low_trial_df = full_df[full_df['count_status'] == 'excluded_low_trials'][
-        ['Patient', 'Remembered', 'Forgotten']
-    ].sort_values('Patient')
+        ['Patient', 'Remembered', 'Forgotten', 'count_source']
+    ].drop_duplicates().sort_values('Patient')
+    manual_count_df = full_df[full_df['count_source'] == 'manual_day2_log'][
+        ['Patient', 'Remembered', 'Forgotten', 'ValidOldTrials', 'DroppedMissingInfo', 'LogPath']
+    ].drop_duplicates().sort_values('Patient')
 
     lines = [
         'Balanced Behavioral Subjects Summary',
@@ -120,13 +195,31 @@ def save_subset_artifacts(full_df: pd.DataFrame, balanced_df: pd.DataFrame) -> N
         f'Included balanced subjects: {len(balanced_df)}',
         f'Criterion: Remembered >= {MIN_TRIALS_PER_CONDITION} and Forgotten >= {MIN_TRIALS_PER_CONDITION}',
         '',
-        f'Excluded for low trial counts: {len(low_trial_df)}',
+        f'Subjects supplemented from original day-2 log files: {len(manual_count_df)}',
     ]
+    if manual_count_df.empty:
+        lines.append('  None')
+    else:
+        for row in manual_count_df.itertuples(index=False):
+            log_name = Path(row.LogPath).name
+            lines.append(
+                f'  {row.Patient}: remembered={int(row.Remembered)}, forgotten={int(row.Forgotten)}, '
+                f'valid_old_trials={int(row.ValidOldTrials)}, dropped_missing_info={int(row.DroppedMissingInfo)}, '
+                f'log={log_name}'
+            )
+
+    lines.extend([
+        '',
+        f'Excluded for low trial counts: {len(low_trial_df)}',
+    ])
     if low_trial_df.empty:
         lines.append('  None')
     else:
         for row in low_trial_df.itertuples(index=False):
-            lines.append(f'  {row.Patient}: remembered={int(row.Remembered)}, forgotten={int(row.Forgotten)}')
+            lines.append(
+                f'  {row.Patient}: remembered={int(row.Remembered)}, forgotten={int(row.Forgotten)}, '
+                f'source={row.count_source}'
+            )
 
     lines.extend([
         '',
