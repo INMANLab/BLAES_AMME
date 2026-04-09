@@ -293,6 +293,34 @@ def finalize_swarm_plot(grid, out_path: Path, legend_title: str, legend_labels: 
     plt.close(grid.fig)
 
 
+def plot_dprime_diff_swarm(df: pd.DataFrame) -> None:
+    plot_df = df[df['avg_stim_dprime_diff'].notna()].copy()
+    plot_df['delay_group'] = 'One-day delay'
+
+    grid = sns.catplot(
+        x='delay_group',
+        y='avg_stim_dprime_diff',
+        data=plot_df,
+        kind='swarm',
+        color='black',
+        s=180,
+        height=10,
+        aspect=0.55,
+    )
+    grid.ax.set_ylabel('Dprime difference (stimulated - not stimulated)', fontsize=20)
+    grid.ax.set_title('')
+    grid.fig.suptitle(
+        f'AMME & BLAES dprime difference at one-day delay\nBalanced-trials subjects (N={len(plot_df)})',
+        fontsize=20,
+        y=SWARM_TITLE_Y,
+    )
+    finalize_swarm_plot(
+        grid,
+        OUTPUT_DIR / 'AMMEBLAES_dprime_diff_swarmplot_balanced_trials.png',
+        legend_title='',
+    )
+
+
 def plot_connected_dotplot(df: pd.DataFrame) -> None:
     stim = pd.to_numeric(df['avg_stim'], errors='coerce')
     nostim = pd.to_numeric(df['nostim'], errors='coerce')
@@ -540,6 +568,7 @@ def main() -> None:
     print(f'Balanced-trials rows: {len(balanced_df)}')
     print(f'Output directory: {OUTPUT_DIR}')
 
+    plot_dprime_diff_swarm(balanced_df)
     plot_connected_dotplot(balanced_df)
     plot_responder_swarm(balanced_df)
     plot_sex_swarm(balanced_df)
