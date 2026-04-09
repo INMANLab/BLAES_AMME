@@ -38,6 +38,9 @@ RESPONDER_PALETTE = {
     'Non-responders': '#F04646',
     'Anti-responders': '#F79B62',
 }
+SWARM_TITLE_Y = 0.975
+SWARM_STATS_Y = 0.905
+SWARM_TOP = 0.80
 
 
 def load_behavior_csv() -> pd.DataFrame:
@@ -173,9 +176,9 @@ def finalize_swarm_plot(grid, out_path: Path, legend_title: str, legend_labels: 
     ax.tick_params(axis='x', length=0)
 
     if stats_text:
-        grid.fig.text(0.5, 0.92, stats_text, ha='center', va='center', fontsize=16)
+        grid.fig.text(0.5, SWARM_STATS_Y, stats_text, ha='center', va='center', fontsize=16)
 
-    grid.fig.subplots_adjust(left=0.18, right=0.78, top=0.88)
+    grid.fig.subplots_adjust(left=0.18, right=0.78, top=SWARM_TOP)
 
     legend = grid._legend
     if legend is not None:
@@ -190,7 +193,7 @@ def finalize_swarm_plot(grid, out_path: Path, legend_title: str, legend_labels: 
                 text.set_fontsize(14)
         legend.set_title(legend_title, prop={'size': 18})
 
-    grid.savefig(out_path, dpi=300, bbox_inches='tight')
+    grid.savefig(out_path, dpi=300, bbox_inches='tight', pad_inches=0.35)
     plt.close(grid.fig)
 
 
@@ -210,21 +213,25 @@ def plot_connected_dotplot(df: pd.DataFrame) -> None:
 
     ax.set_ylabel('Dprime value', fontsize=20, fontweight='bold', labelpad=8)
     ax.set_xlabel('')
-    ax.set_title(
+    fig.suptitle(
         f'AMME & BLAES stim vs. nostim dprime at one-day delay\nBalanced-trials subjects (N={len(valid)})',
         fontsize=18,
-        pad=25,
         fontweight='normal',
+        y=0.975,
     )
-    ax.text(0.5, 0.97, f't = {t_stat:.3f}\np = {p_value:.3f}', transform=ax.transAxes,
-            ha='center', va='bottom', fontsize=14)
+    fig.text(0.5, 0.905, f't = {t_stat:.3f}\np = {p_value:.3f}', ha='center', va='center', fontsize=14)
     ax.set_xticks([0, 1])
     ax.set_xticklabels(['nostim', 'stim'], fontsize=20, fontweight='bold')
     ax.tick_params(axis='y', labelsize=15)
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
-    fig.tight_layout()
-    fig.savefig(OUTPUT_DIR / 'AMME_BLAES_Stim_NoStim_connected_dotplot_balanced_trials.png', dpi=300)
+    fig.subplots_adjust(top=0.82)
+    fig.savefig(
+        OUTPUT_DIR / 'AMME_BLAES_Stim_NoStim_connected_dotplot_balanced_trials.png',
+        dpi=300,
+        bbox_inches='tight',
+        pad_inches=0.35,
+    )
     plt.close(fig)
 
 
@@ -246,6 +253,7 @@ def plot_responder_swarm(df: pd.DataFrame) -> None:
     grid.fig.suptitle(
         f'AMME & BLAES dprime difference at one-day delay\nBalanced-trials subjects (N={len(df)})',
         fontsize=20,
+        y=SWARM_TITLE_Y,
     )
     finalize_swarm_plot(
         grid,
@@ -287,6 +295,7 @@ def plot_sex_swarm(df: pd.DataFrame) -> None:
     grid.fig.suptitle(
         f'AMME & BLAES dprime difference by sex at one-day delay\nBalanced-trials subjects (N={len(plot_df)})',
         fontsize=20,
+        y=SWARM_TITLE_Y,
     )
     finalize_swarm_plot(
         grid,
@@ -327,6 +336,7 @@ def plot_hemisphere_swarm(df: pd.DataFrame) -> None:
     grid.fig.suptitle(
         f'AMME & BLAES stim hemisphere at one-day delay\nBalanced-trials subjects (N={len(plot_df)})',
         fontsize=20,
+        y=SWARM_TITLE_Y,
     )
     finalize_swarm_plot(
         grid,
@@ -367,6 +377,7 @@ def plot_stim_intensity_swarm(df: pd.DataFrame) -> None:
     grid.fig.suptitle(
         f'AMME & BLAES dprime difference by stim intensity at one-day delay\nBalanced-trials subjects (N={len(plot_df)})',
         fontsize=20,
+        y=SWARM_TITLE_Y,
     )
     finalize_swarm_plot(
         grid,
@@ -411,6 +422,7 @@ def plot_ied_frequency_swarm(df: pd.DataFrame) -> None:
     grid.fig.suptitle(
         f'AMME & BLAES dprime difference by IED frequency at one-day delay\nBalanced-trials subjects (N={len(plot_df)})',
         fontsize=20,
+        y=SWARM_TITLE_Y,
     )
     finalize_swarm_plot(
         grid,
