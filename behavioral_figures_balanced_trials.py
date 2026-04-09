@@ -421,6 +421,7 @@ def plot_ied_frequency_swarm(df: pd.DataFrame) -> None:
 
 def main() -> None:
     sns.set_style('white')
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     behavior_df = load_behavior_csv()
     counts_df = load_trial_counts()
     full_df, balanced_df = apply_balanced_filter(behavior_df, counts_df)
