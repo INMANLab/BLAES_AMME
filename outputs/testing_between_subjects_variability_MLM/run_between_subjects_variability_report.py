@@ -44,40 +44,33 @@ MEMORY_LABEL = "Memory modulation (avg_stim_dprime_diff)"
 PREDICTOR_INFO = {
     "sex": {
         "label": "Sex (male vs female)",
-        "short_label": "Sex (male vs female)",
         "type": "binary",
         "reference": "female",
     },
     "stim_trajectory": {
         "label": "Stim trajectory (STG vs MTG; frontal excluded)",
-        "short_label": "Trajectory (STG vs MTG)",
         "type": "binary",
         "reference": "MTG",
     },
     "age": {
         "label": "Age (years)",
-        "short_label": "Age",
         "type": "continuous",
     },
     "stim_hemisphere": {
         "label": "Stim hemisphere (R vs L)",
-        "short_label": "Hemisphere (R vs L)",
         "type": "binary",
         "reference": "L",
     },
     "stim_DB": {
         "label": "Stim amplitude (DB)",
-        "short_label": "Amplitude (DB)",
         "type": "continuous",
     },
     "IED_freq": {
         "label": "IED frequency (Likert)",
-        "short_label": "IED frequency",
         "type": "continuous",
     },
     "Memory_Z": {
         "label": "Pre-surgical baseline memory (Memory_Z)",
-        "short_label": "Memory_Z",
         "type": "continuous",
     },
 }
@@ -166,10 +159,6 @@ def ci_str(low: float, high: float, decimals: int = 3) -> str:
 
 def wrap(text: str, width: int) -> str:
     return textwrap.fill(text, width=width)
-
-
-def short_label(predictor: str) -> str:
-    return PREDICTOR_INFO[predictor].get("short_label", PREDICTOR_INFO[predictor]["label"])
 
 
 def load_behavior() -> pd.DataFrame:
@@ -449,9 +438,9 @@ def compute_unadjusted_sex_test(df: pd.DataFrame) -> dict:
 def build_model_summary_table(results: list[LinearModelResult]) -> pd.DataFrame:
     rows = []
     for result in results:
-        included_labels = [short_label(p) for p in result.included_predictors]
+        included_labels = [PREDICTOR_INFO[p]["label"] for p in result.included_predictors]
         omitted_labels = [
-            f"{short_label(p)} ({reason})" for p, reason in result.omitted_predictors
+            f"{PREDICTOR_INFO[p]['label']} ({reason})" for p, reason in result.omitted_predictors
         ]
         rows.append(
             {
@@ -474,7 +463,7 @@ def pretty_coefficients(result: LinearModelResult) -> pd.DataFrame:
         if term == "Intercept":
             label = "Intercept"
         else:
-            label = short_label(term)
+            label = PREDICTOR_INFO[term]["label"]
         rows.append(
             {
                 "Term": label,
@@ -492,7 +481,7 @@ def pretty_contributions(result: LinearModelResult) -> pd.DataFrame:
     if result.contributions.empty:
         return pd.DataFrame(columns=["Predictor", "Delta R2", "F change", "p"])
     out = result.contributions.copy()
-    out["Predictor"] = out["predictor"].map(short_label)
+    out["Predictor"] = out["label"]
     out["Delta R2"] = out["Delta_R2"].map(fmt)
     out["F change"] = out["F_change"].map(fmt)
     out["p"] = out["p_change"].map(p_str)
@@ -504,7 +493,7 @@ def pretty_sequential_steps(result: LinearModelResult) -> pd.DataFrame:
         return pd.DataFrame(columns=["Step", "Added predictor", "Model R2", "Delta R2", "F change", "p"])
     out = result.sequential_steps.copy()
     out["Step"] = out["step"].astype(int)
-    out["Added predictor"] = out["predictor"].map(short_label)
+    out["Added predictor"] = out["label"]
     out["Model R2"] = out["R2"].map(fmt)
     out["Delta R2"] = out["Delta_R2"].map(fmt)
     out["F change"] = out["F_change"].map(fmt)
@@ -840,7 +829,7 @@ def add_primary_pages(pdf: PdfPages, result: LinearModelResult, sex_test: dict) 
         col_widths=[0.10, 0.14, 0.12, 0.12, 0.28, 0.12],
     )
 
-    ax_coef = fig.add_axes([0.08, 0.36, 0.84, 0.34])
+    ax_coef = fig.add_axes([0.08, 0.43, 0.84, 0.24])
     draw_apa_table(
         ax_coef,
         pretty_coefficients(result),
@@ -850,17 +839,14 @@ def add_primary_pages(pdf: PdfPages, result: LinearModelResult, sex_test: dict) 
         bbox=[0, 0.08, 1, 0.84],
         col_widths=[0.36, 0.11, 0.11, 0.11, 0.11, 0.20],
     )
-    pdf.savefig(fig, bbox_inches="tight")
-    plt.close(fig)
 
-    fig = plt.figure(figsize=(8.5, 11))
-    ax_seq = fig.add_axes([0.08, 0.58, 0.84, 0.24])
+    ax_contrib = fig.add_axes([0.08, 0.11, 0.84, 0.23])
     draw_apa_table(
-        ax_seq,
+        ax_contrib,
         pretty_sequential_steps(result),
         "Table 5\nSequential model building in the requested order",
         note="Each row shows the change produced by adding that predictor after all predictors above it were already in the model.",
-        font_size=8.6,
+        font_size=8.4,
         bbox=[0, 0.10, 1, 0.82],
         col_widths=[0.08, 0.36, 0.14, 0.14, 0.14, 0.10],
     )
@@ -879,10 +865,12 @@ def add_primary_pages(pdf: PdfPages, result: LinearModelResult, sex_test: dict) 
         f"and the adjusted coefficient for STG versus MTG trajectory was B = {fmt(coef_traj['B'])} "
         f"(95% CI {ci_str(coef_traj['CI_low'], coef_traj['CI_high'])}), t = {fmt(coef_traj['t'])}, p = {p_str(coef_traj['p'])}."
     )
-    fig.text(0.08, 0.90, "Primary Model Interpretation", fontsize=15, fontweight="bold", family="DejaVu Serif")
-    fig.text(0.08, 0.54, wrap(narrative, 112), fontsize=10.2, family="DejaVu Serif")
+    fig.text(0.08, 0.37, wrap(narrative, 112), fontsize=10.2, family="DejaVu Serif")
+    pdf.savefig(fig, bbox_inches="tight")
+    plt.close(fig)
 
-    ax_plot = fig.add_axes([0.11, 0.14, 0.78, 0.28])
+    fig = plt.figure(figsize=(8.5, 11))
+    ax_plot = fig.add_axes([0.11, 0.48, 0.78, 0.36])
     plot_df = result.data.copy()
     colors = {"female": "#c96f4a", "male": "#2f5d7e"}
     x_positions = {"female": 0, "male": 1}
@@ -923,7 +911,7 @@ def add_primary_pages(pdf: PdfPages, result: LinearModelResult, sex_test: dict) 
 
     fig.text(
         0.08,
-        0.49,
+        0.91,
         "Unadjusted Sex Difference",
         fontsize=15,
         fontweight="bold",
@@ -931,7 +919,7 @@ def add_primary_pages(pdf: PdfPages, result: LinearModelResult, sex_test: dict) 
     )
     fig.text(
         0.08,
-        0.08,
+        0.43,
         wrap(
             f"Welch's test on the raw patient-level outcome gave t({fmt(sex_test['df'], 2)}) = {fmt(sex_test['t'])}, "
             f"p = {p_str(sex_test['p'])}, with males higher than females by {fmt(sex_test['mean_diff'])} "
@@ -1015,7 +1003,7 @@ def add_sensitivity_pages(pdf: PdfPages, results: list[LinearModelResult]) -> No
             va="top",
         )
 
-        ax_coef = fig.add_axes([0.08, 0.28, 0.84, 0.50])
+        ax_coef = fig.add_axes([0.08, 0.50, 0.84, 0.28])
         draw_apa_table(
             ax_coef,
             pretty_coefficients(result),
@@ -1025,29 +1013,14 @@ def add_sensitivity_pages(pdf: PdfPages, results: list[LinearModelResult]) -> No
             bbox=[0, 0.10, 1, 0.82],
             col_widths=[0.36, 0.11, 0.11, 0.11, 0.11, 0.20],
         )
-        pdf.savefig(fig, bbox_inches="tight")
-        plt.close(fig)
 
-        fig = plt.figure(figsize=(8.5, 11))
-        ax_title = fig.add_axes([0.08, 0.90, 0.84, 0.07])
-        ax_title.axis("off")
-        ax_title.text(
-            0.0,
-            0.9,
-            f"{result.title}: Stepwise Build",
-            fontsize=15,
-            fontweight="bold",
-            family="DejaVu Serif",
-            va="top",
-        )
-
-        ax_contrib = fig.add_axes([0.08, 0.48, 0.84, 0.30])
+        ax_contrib = fig.add_axes([0.08, 0.18, 0.84, 0.20])
         draw_apa_table(
             ax_contrib,
             pretty_sequential_steps(result),
             f"Table\n{result.title} sequential model-building steps",
             note="Predictors are entered in the requested order for that model and delta R2 values are subset-specific.",
-            font_size=8.6,
+            font_size=8.0,
             bbox=[0, 0.12, 1, 0.78],
             col_widths=[0.08, 0.36, 0.14, 0.14, 0.14, 0.10],
         )
@@ -1055,11 +1028,11 @@ def add_sensitivity_pages(pdf: PdfPages, results: list[LinearModelResult]) -> No
         omitted_line = "None"
         if result.omitted_predictors:
             omitted_line = "; ".join(
-                f"{short_label(p)} ({reason})" for p, reason in result.omitted_predictors
+                f"{PREDICTOR_INFO[p]['label']} ({reason})" for p, reason in result.omitted_predictors
             )
         fig.text(
             0.08,
-            0.38,
+            0.42,
             wrap(
                 f"N = {result.n}, R2 = {fmt(result.r2)}, adjusted R2 = {fmt(result.adj_r2)}, "
                 f"F({result.df_model}, {result.df_resid}) = {fmt(result.f_stat)}, p = {p_str(result.f_p)}. "

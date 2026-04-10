@@ -1,6 +1,6 @@
 Predictor,Delta R2,F change,p
 Sex (male vs female),0.053,3.220,.080
-Trajectory (STG vs MTG),0.083,5.058,.030
-Age,0.003,0.188,.666
-Hemisphere (R vs L),0.011,0.698,.408
-Amplitude (DB),0.033,2.027,.162
+Stim trajectory (STG vs MTG; frontal excluded),0.083,5.058,.030
+Age (years),0.003,0.188,.666
+Stim hemisphere (R vs L),0.011,0.698,.408
+Stim amplitude (DB),0.033,2.027,.162
