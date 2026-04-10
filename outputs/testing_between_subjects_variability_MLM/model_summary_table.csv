@@ -5,3 +5,4 @@ Model 3,19,Sex (male vs female); Stim trajectory (STG vs MTG); Pre-surgical base
 Model 4,19,Sex (male vs female); Stim trajectory (STG vs MTG); Stim hemisphere (R vs L); Age (years); Pre-surgical baseline memory (Memory_Z); IED frequency (Likert),Stim amplitude (DB) (no variation in analysis subset),0.11868389586235029,-0.3219741562064746,0.9408789231723803
 Model 5,22,Pre-surgical baseline memory (Memory_Z); IED frequency (Likert),,0.07502468299838849,-0.022341139843886415,0.47669035567584594
 Model 6,19,Sex (male vs female); Stim trajectory (STG vs MTG); Pre-surgical baseline memory (Memory_Z); IED frequency (Likert),,0.1108890282756757,-0.1431426779312741,0.7801701402797188
+Model 7,54,Stim amplitude (DB); Stim hemisphere (R vs L); Age (years),,0.14697227490894949,0.09579061140348644,0.045478736694434474

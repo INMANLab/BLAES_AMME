@@ -128,6 +128,14 @@ MODEL_SPECS = [
             "and IED frequency."
         ),
     },
+    {
+        "slug": "model_7",
+        "title": "Model 7",
+        "requested_predictors": ["stim_DB", "stim_hemisphere", "age"],
+        "description": (
+            "Patient-level model with stimulation amplitude, stimulation hemisphere, and age only."
+        ),
+    },
 ]
 
 
@@ -626,6 +634,7 @@ def add_title_page(pdf: PdfPages, sex_test: dict, primary_result: LinearModelRes
         "Model 4 includes sex, stim trajectory, stim hemisphere, stim amplitude, age, Memory_Z, and IED frequency.",
         "Model 5 includes Memory_Z and IED frequency only.",
         "Model 6 includes sex, stim trajectory, Memory_Z, and IED frequency.",
+        "Model 7 includes stim amplitude, stim hemisphere, and age only.",
     ]
     ax.text(
         0.08,
@@ -880,7 +889,7 @@ def add_primary_pages(pdf: PdfPages, result: LinearModelResult, sex_test: dict) 
             f"Welch's test on the raw patient-level outcome gave t({fmt(sex_test['df'], 2)}) = {fmt(sex_test['t'])}, "
             f"p = {p_str(sex_test['p'])}, with males higher than females by {fmt(sex_test['mean_diff'])} "
             f"(95% CI {ci_str(sex_test['ci_low'], sex_test['ci_high'])}). "
-            "That unadjusted contrast is descriptive only and should be interpreted separately from the six requested multivariable models.",
+            "That unadjusted contrast is descriptive only and should be interpreted separately from the seven requested multivariable models.",
             110,
         ),
         fontsize=10.5,
@@ -912,11 +921,12 @@ def add_sensitivity_pages(pdf: PdfPages, results: list[LinearModelResult]) -> No
         0.0,
         0.35,
         wrap(
-            "This page compares the six patient-level models exactly as requested. "
+            "This page compares the seven patient-level models exactly as requested. "
             "Model 2 adds age, hemisphere, and stim amplitude to Model 1. "
             "Model 3 tests sex and trajectory together with Memory_Z and IED frequency. "
             "Model 4 includes all requested predictors in the complete-case subset. "
-            "Model 5 isolates Memory_Z and IED frequency, and Model 6 repeats sex plus trajectory with those same two covariates.",
+            "Model 5 isolates Memory_Z and IED frequency, Model 6 repeats sex plus trajectory with those same two covariates, "
+            "and Model 7 isolates stim amplitude, stim hemisphere, and age.",
             112,
         ),
         fontsize=10.5,
@@ -927,10 +937,10 @@ def add_sensitivity_pages(pdf: PdfPages, results: list[LinearModelResult]) -> No
     draw_apa_table(
         ax_table,
         summary_df,
-        "Table 6\nComparison of the six requested patient-level models",
+        "Table 6\nComparison of the seven requested patient-level models",
         note=(
             "Predictors with no variation inside a given subset are omitted automatically. "
-            "Because Memory_Z and IED frequency are incomplete, Models 3 through 6 use smaller subsets than Models 1 and 2."
+            "Because Memory_Z and IED frequency are incomplete, Models 3 through 6 use smaller subsets than Models 1, 2, and 7."
         ),
         font_size=8.2,
         bbox=[0, 0.06, 1, 0.90],
@@ -1022,6 +1032,7 @@ def add_conclusion_page(pdf: PdfPages, primary_result: LinearModelResult, result
     model_4 = next(item for item in results if item.slug == "model_4")
     model_5 = next(item for item in results if item.slug == "model_5")
     model_6 = next(item for item in results if item.slug == "model_6")
+    model_7 = next(item for item in results if item.slug == "model_7")
     model_1_sex = model_1.coefficients.loc[model_1.coefficients["term"] == "sex"].iloc[0]
     model_1_traj = model_1.coefficients.loc[model_1.coefficients["term"] == "stim_trajectory"].iloc[0]
 
@@ -1036,6 +1047,7 @@ def add_conclusion_page(pdf: PdfPages, primary_result: LinearModelResult, result
         f"Model 4 included all requested predictors in the complete-case subset (N = {model_4.n}; model p = {p_str(model_4.f_p)}). "
         f"Model 5 tested only Memory_Z and IED frequency (N = {model_5.n}; model p = {p_str(model_5.f_p)}). "
         f"Model 6 tested sex, stim trajectory, Memory_Z, and IED frequency (N = {model_6.n}; model p = {p_str(model_6.f_p)}). "
+        f"Model 7 tested stim amplitude, stim hemisphere, and age only (N = {model_7.n}; model p = {p_str(model_7.f_p)}). "
         "If a predictor is constant within a subset, the script omits it automatically rather than estimating an uninterpretable coefficient.",
     ]
 
@@ -1057,8 +1069,8 @@ def add_conclusion_page(pdf: PdfPages, primary_result: LinearModelResult, result
         ax,
         0.08,
         0.21,
-        "Interpret the six models as separate requested patient-level regressions rather than as one stepwise sequence. "
-        "Models 1 and 2 answer the trajectory-focused question in the larger subset, Models 3 and 6 place sex and trajectory alongside Memory_Z and IED frequency, Model 4 adds the full covariate set, and Model 5 isolates Memory_Z plus IED frequency alone.",
+        "Interpret the seven models as separate requested patient-level regressions rather than as one stepwise sequence. "
+        "Models 1 and 2 answer the trajectory-focused question in the larger subset, Models 3 and 6 place sex and trajectory alongside Memory_Z and IED frequency, Model 4 adds the full covariate set, Model 5 isolates Memory_Z plus IED frequency alone, and Model 7 isolates amplitude, hemisphere, and age alone.",
         fontsize=11,
     )
     pdf.savefig(fig, bbox_inches="tight")
