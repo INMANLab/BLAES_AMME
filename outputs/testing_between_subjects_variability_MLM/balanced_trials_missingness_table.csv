@@ -1,0 +1,8 @@
+Variable,Label,Non-missing,Missing,Percent available
+avg_stim_dprime_diff,Memory modulation (avg_stim_dprime_diff),43,0,100.0
+sex,Sex (male vs female),43,0,100.0
+age,Age (years),43,0,100.0
+stim_hemisphere,Stim hemisphere (R vs L),43,0,100.0
+stim_DB,Stim amplitude (DB),43,0,100.0
+IED_freq,IED frequency (Likert),34,9,79.06976744186046
+Memory_Z,Pre-surgical baseline memory (Memory_Z),26,17,60.46511627906976
