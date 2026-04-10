@@ -1,7 +1,0 @@
-Predictor,Delta R2,F change,p
-Sex (male vs female),0.000,0.000,.999
-Trajectory (STG vs MTG),0.064,0.865,.371
-Age,0.001,0.013,.912
-Hemisphere (R vs L),0.008,0.103,.753
-IED frequency,0.001,0.012,.914
-Memory_Z,0.001,0.018,.894

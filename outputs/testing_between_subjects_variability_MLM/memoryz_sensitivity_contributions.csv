@@ -1,6 +1,0 @@
-Predictor,Delta R2,F change,p
-Sex (male vs female),0.052,1.151,.297
-Trajectory (STG vs MTG),0.019,0.408,.530
-Age,0.006,0.133,.720
-Hemisphere (R vs L),0.005,0.120,.733
-Memory_Z,0.005,0.117,.736

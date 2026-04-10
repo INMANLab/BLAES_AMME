@@ -1,5 +1,0 @@
-Predictor,Delta R2,F change,p
-Sex (male vs female),0.014,0.330,.572
-Age (years),0.036,0.859,.365
-Stim hemisphere (R vs L),0.004,0.106,.748
-Pre-surgical baseline memory (Memory_Z),0.016,0.368,.550

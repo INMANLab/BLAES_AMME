@@ -42,6 +42,10 @@ from behavioral_figures_balanced_trials import (
 OUTPUT_DIR = Path(__file__).resolve().parent
 OUTPUT_PDF = OUTPUT_DIR / "between_subjects_variability_report_balanced_trials.pdf"
 FILE_PREFIX = "balanced_trials_"
+CSV_DIR = OUTPUT_DIR / "csv"
+SUMMARY_DIR = CSV_DIR / "summary"
+COEFFICIENTS_DIR = CSV_DIR / "coefficients"
+CONTRIBUTIONS_DIR = CSV_DIR / "contributions"
 
 BEHAVIOR_CANDIDATES = [
     BASE_DIR / "AMMEBLAES_includedpts_firstsession_behavioral.csv",
@@ -456,17 +460,20 @@ def export_tables(
     model_summary: pd.DataFrame,
     results: list[LinearModelResult],
 ) -> None:
-    missingness.to_csv(OUTPUT_DIR / f"{FILE_PREFIX}missingness_table.csv", index=False)
-    sex_descriptives.to_csv(OUTPUT_DIR / f"{FILE_PREFIX}sex_descriptives_table.csv", index=False)
-    model_summary.to_csv(OUTPUT_DIR / f"{FILE_PREFIX}model_summary_table.csv", index=False)
+    for folder in [SUMMARY_DIR, COEFFICIENTS_DIR, CONTRIBUTIONS_DIR]:
+        folder.mkdir(parents=True, exist_ok=True)
+
+    missingness.to_csv(SUMMARY_DIR / f"{FILE_PREFIX}missingness_table.csv", index=False)
+    sex_descriptives.to_csv(SUMMARY_DIR / f"{FILE_PREFIX}sex_descriptives_table.csv", index=False)
+    model_summary.to_csv(SUMMARY_DIR / f"{FILE_PREFIX}model_summary_table.csv", index=False)
 
     for result in results:
         pretty_coefficients(result).to_csv(
-            OUTPUT_DIR / f"{FILE_PREFIX}{result.slug}_coefficients.csv",
+            COEFFICIENTS_DIR / f"{FILE_PREFIX}{result.slug}_coefficients.csv",
             index=False,
         )
         pretty_contributions(result).to_csv(
-            OUTPUT_DIR / f"{FILE_PREFIX}{result.slug}_contributions.csv",
+            CONTRIBUTIONS_DIR / f"{FILE_PREFIX}{result.slug}_contributions.csv",
             index=False,
         )
 

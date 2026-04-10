@@ -1,5 +1,0 @@
-Model,N,Predictors used,Omitted in subset,R2,Adj R2,Model p
-Primary Full-Sample Model,48,Sex (male vs female); Trajectory (STG vs MTG); Age; Hemisphere (R vs L); Amplitude (DB),,0.3127932932039714,0.2309829709663489,0.006056429897270399
-IED Frequency Sensitivity Model,41,Sex (male vs female); Trajectory (STG vs MTG); Age; Hemisphere (R vs L); Amplitude (DB); IED frequency,,0.28609357332676866,0.16011008626678658,0.05975890872484235
-Memory_Z Sensitivity Model,25,Sex (male vs female); Trajectory (STG vs MTG); Age; Hemisphere (R vs L); Memory_Z,Amplitude (DB) (no variation in analysis subset),0.13705589533572848,-0.09003465852329029,0.6980132265462478
-Complete-Case Exploratory Model,19,Sex (male vs female); Trajectory (STG vs MTG); Age; Hemisphere (R vs L); IED frequency; Memory_Z,Amplitude (DB) (no variation in analysis subset),0.1186838958623504,-0.3219741562064744,0.9408789231723801
