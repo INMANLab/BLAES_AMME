@@ -111,6 +111,23 @@ MODEL_SPECS = [
             "stimulation amplitude, age, baseline memory (Memory_Z), and IED frequency."
         ),
     },
+    {
+        "slug": "model_5",
+        "title": "Model 5",
+        "requested_predictors": ["Memory_Z", "IED_freq"],
+        "description": (
+            "Patient-level model with baseline memory (Memory_Z) and IED frequency only."
+        ),
+    },
+    {
+        "slug": "model_6",
+        "title": "Model 6",
+        "requested_predictors": ["sex", "stim_trajectory", "Memory_Z", "IED_freq"],
+        "description": (
+            "Patient-level model with sex, stimulation trajectory, baseline memory (Memory_Z), "
+            "and IED frequency."
+        ),
+    },
 ]
 
 
@@ -607,6 +624,8 @@ def add_title_page(pdf: PdfPages, sex_test: dict, primary_result: LinearModelRes
         "Model 2 includes sex, stim trajectory, stim hemisphere, stim amplitude, and age.",
         "Model 3 includes sex, stim trajectory, Memory_Z, and IED frequency.",
         "Model 4 includes sex, stim trajectory, stim hemisphere, stim amplitude, age, Memory_Z, and IED frequency.",
+        "Model 5 includes Memory_Z and IED frequency only.",
+        "Model 6 includes sex, stim trajectory, Memory_Z, and IED frequency.",
     ]
     ax.text(
         0.08,
@@ -861,7 +880,7 @@ def add_primary_pages(pdf: PdfPages, result: LinearModelResult, sex_test: dict) 
             f"Welch's test on the raw patient-level outcome gave t({fmt(sex_test['df'], 2)}) = {fmt(sex_test['t'])}, "
             f"p = {p_str(sex_test['p'])}, with males higher than females by {fmt(sex_test['mean_diff'])} "
             f"(95% CI {ci_str(sex_test['ci_low'], sex_test['ci_high'])}). "
-            "That unadjusted contrast is descriptive only and should be interpreted separately from the four requested multivariable models.",
+            "That unadjusted contrast is descriptive only and should be interpreted separately from the six requested multivariable models.",
             110,
         ),
         fontsize=10.5,
@@ -893,10 +912,11 @@ def add_sensitivity_pages(pdf: PdfPages, results: list[LinearModelResult]) -> No
         0.0,
         0.35,
         wrap(
-            "This page compares the four patient-level models exactly as requested. "
+            "This page compares the six patient-level models exactly as requested. "
             "Model 2 adds age, hemisphere, and stim amplitude to Model 1. "
-            "Model 3 instead tests sex and trajectory together with Memory_Z and IED frequency. "
-            "Model 4 includes all requested predictors in the complete-case subset.",
+            "Model 3 tests sex and trajectory together with Memory_Z and IED frequency. "
+            "Model 4 includes all requested predictors in the complete-case subset. "
+            "Model 5 isolates Memory_Z and IED frequency, and Model 6 repeats sex plus trajectory with those same two covariates.",
             112,
         ),
         fontsize=10.5,
@@ -907,10 +927,10 @@ def add_sensitivity_pages(pdf: PdfPages, results: list[LinearModelResult]) -> No
     draw_apa_table(
         ax_table,
         summary_df,
-        "Table 6\nComparison of the four requested patient-level models",
+        "Table 6\nComparison of the six requested patient-level models",
         note=(
             "Predictors with no variation inside a given subset are omitted automatically. "
-            "Because Memory_Z and IED frequency are incomplete, Models 3 and 4 use smaller subsets than Models 1 and 2."
+            "Because Memory_Z and IED frequency are incomplete, Models 3 through 6 use smaller subsets than Models 1 and 2."
         ),
         font_size=8.2,
         bbox=[0, 0.06, 1, 0.90],
@@ -1000,6 +1020,8 @@ def add_conclusion_page(pdf: PdfPages, primary_result: LinearModelResult, result
     model_2 = next(item for item in results if item.slug == "model_2")
     model_3 = next(item for item in results if item.slug == "model_3")
     model_4 = next(item for item in results if item.slug == "model_4")
+    model_5 = next(item for item in results if item.slug == "model_5")
+    model_6 = next(item for item in results if item.slug == "model_6")
     model_1_sex = model_1.coefficients.loc[model_1.coefficients["term"] == "sex"].iloc[0]
     model_1_traj = model_1.coefficients.loc[model_1.coefficients["term"] == "stim_trajectory"].iloc[0]
 
@@ -1012,6 +1034,8 @@ def add_conclusion_page(pdf: PdfPages, primary_result: LinearModelResult, result
         f"Model 2 added stim hemisphere, stim amplitude, and age in the same trajectory-defined subset (N = {model_2.n}; model p = {p_str(model_2.f_p)}).",
         f"Model 3 added Memory_Z and IED frequency instead (N = {model_3.n}; model p = {p_str(model_3.f_p)}).",
         f"Model 4 included all requested predictors in the complete-case subset (N = {model_4.n}; model p = {p_str(model_4.f_p)}). "
+        f"Model 5 tested only Memory_Z and IED frequency (N = {model_5.n}; model p = {p_str(model_5.f_p)}). "
+        f"Model 6 tested sex, stim trajectory, Memory_Z, and IED frequency (N = {model_6.n}; model p = {p_str(model_6.f_p)}). "
         "If a predictor is constant within a subset, the script omits it automatically rather than estimating an uninterpretable coefficient.",
     ]
 
@@ -1033,8 +1057,8 @@ def add_conclusion_page(pdf: PdfPages, primary_result: LinearModelResult, result
         ax,
         0.08,
         0.21,
-        "Interpret the four models as separate requested patient-level regressions rather than as one stepwise sequence. "
-        "Models 1 and 2 answer the trajectory-focused question in the larger subset, while Models 3 and 4 show what happens once Memory_Z and IED frequency are introduced in smaller subsets.",
+        "Interpret the six models as separate requested patient-level regressions rather than as one stepwise sequence. "
+        "Models 1 and 2 answer the trajectory-focused question in the larger subset, Models 3 and 6 place sex and trajectory alongside Memory_Z and IED frequency, Model 4 adds the full covariate set, and Model 5 isolates Memory_Z plus IED frequency alone.",
         fontsize=11,
     )
     pdf.savefig(fig, bbox_inches="tight")
