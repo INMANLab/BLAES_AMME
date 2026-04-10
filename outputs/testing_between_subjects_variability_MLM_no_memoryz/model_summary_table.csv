@@ -1,0 +1,3 @@
+Model,N,Predictors used,Omitted in subset,R2,Adj R2,Model p
+Primary Full-Sample Model,54,Sex (male vs female); Age (years); Stim hemisphere (R vs L); Stim amplitude (DB),,0.2047526945984509,0.13983454721873256,0.021960575447232844
+IED Frequency Sensitivity Model,44,Sex (male vs female); Age (years); Stim hemisphere (R vs L); Stim amplitude (DB); IED frequency (Likert),,0.16309581641835902,0.05297684489445886,0.218795086629213

@@ -1,0 +1,5 @@
+Predictor,Delta R2,F change,p
+Sex (male vs female),0.058,3.560,.065
+Age (years),0.042,2.610,.113
+Stim hemisphere (R vs L),0.037,2.277,.138
+Stim amplitude (DB),0.004,0.255,.616
