@@ -1,0 +1,5 @@
+Model,N,Predictors used,Omitted in subset,R2,Adj R2,Model p
+Primary Full-Sample Model,43,Sex (male vs female); Age (years); Stim hemisphere (R vs L); Stim amplitude (DB),,0.15729635864818903,0.06859071219010371,0.15439967438037983
+IED Frequency Sensitivity Model,34,Sex (male vs female); Age (years); Stim hemisphere (R vs L); Stim amplitude (DB); IED frequency (Likert),,0.11181320783573645,-0.04679157647931054,0.6245025970501019
+Memory_Z Sensitivity Model,26,Sex (male vs female); Age (years); Stim hemisphere (R vs L); Pre-surgical baseline memory (Memory_Z),Stim amplitude (DB) (no variation in analysis subset),0.11449584267521584,-0.05417161586283825,0.6142700731827627
+Complete-Case Exploratory Model,18,Sex (male vs female); Age (years); Stim hemisphere (R vs L); IED frequency (Likert); Pre-surgical baseline memory (Memory_Z),Stim amplitude (DB) (no variation in analysis subset),0.10979419428047088,-0.2611248914359996,0.9059452955784214

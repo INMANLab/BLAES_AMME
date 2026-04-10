@@ -30,11 +30,6 @@ from scipy import stats
 BASE_DIR = Path(__file__).resolve().parents[2]
 OUTPUT_DIR = Path(__file__).resolve().parent
 OUTPUT_PDF = OUTPUT_DIR / "between_subjects_variability_report.pdf"
-CSV_DIR = OUTPUT_DIR / "csv"
-SUMMARY_DIR = CSV_DIR / "summary"
-COEFFICIENTS_DIR = CSV_DIR / "coefficients"
-CONTRIBUTIONS_DIR = CSV_DIR / "contributions"
-SEQUENTIAL_STEPS_DIR = CSV_DIR / "sequential_steps"
 
 BEHAVIOR_CANDIDATES = [
     BASE_DIR.parent / "AMMEBLAES_includedpts_firstsession_behavioral.csv",
@@ -523,24 +518,21 @@ def export_tables(
     model_summary: pd.DataFrame,
     results: list[LinearModelResult],
 ) -> None:
-    for folder in [SUMMARY_DIR, COEFFICIENTS_DIR, CONTRIBUTIONS_DIR, SEQUENTIAL_STEPS_DIR]:
-        folder.mkdir(parents=True, exist_ok=True)
-
-    missingness.to_csv(SUMMARY_DIR / "missingness_table.csv", index=False)
-    sex_descriptives.to_csv(SUMMARY_DIR / "sex_descriptives_table.csv", index=False)
-    model_summary.to_csv(SUMMARY_DIR / "model_summary_table.csv", index=False)
+    missingness.to_csv(OUTPUT_DIR / "missingness_table.csv", index=False)
+    sex_descriptives.to_csv(OUTPUT_DIR / "sex_descriptives_table.csv", index=False)
+    model_summary.to_csv(OUTPUT_DIR / "model_summary_table.csv", index=False)
 
     for result in results:
         pretty_coefficients(result).to_csv(
-            COEFFICIENTS_DIR / f"{result.slug}_coefficients.csv",
+            OUTPUT_DIR / f"{result.slug}_coefficients.csv",
             index=False,
         )
         pretty_sequential_steps(result).to_csv(
-            SEQUENTIAL_STEPS_DIR / f"{result.slug}_sequential_steps.csv",
+            OUTPUT_DIR / f"{result.slug}_sequential_steps.csv",
             index=False,
         )
         pretty_contributions(result).to_csv(
-            CONTRIBUTIONS_DIR / f"{result.slug}_contributions.csv",
+            OUTPUT_DIR / f"{result.slug}_contributions.csv",
             index=False,
         )
 
