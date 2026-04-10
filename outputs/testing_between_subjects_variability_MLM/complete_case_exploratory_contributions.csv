@@ -1,0 +1,6 @@
+Predictor,Delta R2,F change,p
+Sex (male vs female),0.007,0.129,.725
+Age (years),0.022,0.404,.534
+Stim hemisphere (R vs L),0.000,0.000,.996
+IED frequency (Likert),0.010,0.171,.684
+Pre-surgical baseline memory (Memory_Z),0.028,0.500,.490
