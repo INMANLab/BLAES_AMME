@@ -159,45 +159,6 @@ extract_fixed_effects <- function(model, logistic = FALSE) {
   )
 }
 
-compute_icc <- function(model) {
-  vc <- as.data.frame(VarCorr(model))
-  tau2 <- sum(vc$vcov[vc$grp != "Residual"])
-  if (inherits(model, "glmerMod")) {
-    sigma2 <- pi^2 / 3
-  } else {
-    sigma2 <- sigma(model)^2
-  }
-  tau2 / (tau2 + sigma2)
-}
-
-compute_marginal_r2 <- function(model) {
-  fe <- fixef(model)
-  X <- model.matrix(model)
-  var_f <- var(as.numeric(X %*% fe))
-  vc <- as.data.frame(VarCorr(model))
-  tau2 <- sum(vc$vcov[vc$grp != "Residual"])
-  if (inherits(model, "glmerMod")) {
-    sigma2 <- pi^2 / 3
-  } else {
-    sigma2 <- sigma(model)^2
-  }
-  var_f / (var_f + tau2 + sigma2)
-}
-
-compute_conditional_r2 <- function(model) {
-  fe <- fixef(model)
-  X <- model.matrix(model)
-  var_f <- var(as.numeric(X %*% fe))
-  vc <- as.data.frame(VarCorr(model))
-  tau2 <- sum(vc$vcov[vc$grp != "Residual"])
-  if (inherits(model, "glmerMod")) {
-    sigma2 <- pi^2 / 3
-  } else {
-    sigma2 <- sigma(model)^2
-  }
-  (var_f + tau2) / (var_f + tau2 + sigma2)
-}
-
 extract_model_compare_table <- function(model_list) {
   ordered_names <- c("m0", "m1", "m2", "m3", "m4", "m_full")
   available <- ordered_names[ordered_names %in% names(model_list)]
@@ -207,20 +168,6 @@ extract_model_compare_table <- function(model_list) {
   rownames(comp) <- NULL
   p_col <- grep("^Pr", names(comp), value = TRUE)
   p_vals <- if (length(p_col) == 1) comp[[p_col]] else rep(NA_real_, nrow(comp))
-
-  icc_vals <- sapply(available, function(nm) {
-    tryCatch(compute_icc(model_list[[nm]]), error = function(e) NA_real_)
-  })
-  marginal_r2 <- sapply(available, function(nm) {
-    tryCatch(compute_marginal_r2(model_list[[nm]]), error = function(e) NA_real_)
-  })
-  conditional_r2 <- sapply(available, function(nm) {
-    tryCatch(compute_conditional_r2(model_list[[nm]]), error = function(e) NA_real_)
-  })
-  formulas <- sapply(available, function(nm) {
-    deparse(formula(model_list[[nm]]), width.cutoff = 500)
-  })
-
   data.frame(
     Model = comp$Model,
     npar = comp$npar,
@@ -230,10 +177,6 @@ extract_model_compare_table <- function(model_list) {
     Chisq = if ("Chisq" %in% names(comp)) comp$Chisq else NA_real_,
     Df = if ("Df" %in% names(comp)) comp$Df else NA_real_,
     p_value = p_vals,
-    ICC = icc_vals,
-    R2_marginal = marginal_r2,
-    R2_conditional = conditional_r2,
-    formula_text = formulas,
     stringsAsFactors = FALSE
   )
 }
