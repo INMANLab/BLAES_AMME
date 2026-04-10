@@ -32,6 +32,7 @@ OUTPUT_DIR = Path(__file__).resolve().parent
 OUTPUT_PDF = OUTPUT_DIR / "between_subjects_variability_report.pdf"
 
 BEHAVIOR_CANDIDATES = [
+    BASE_DIR.parent / "AMMEBLAES_includedpts_firstsession_behavioral.csv",
     BASE_DIR / "AMMEBLAES_includedpts_firstsession_behavioral.csv",
     BASE_DIR / "behavioral figures" / "AMMEBLAES_includedpts_firstsession_behavioral.csv",
 ]
@@ -45,6 +46,11 @@ PREDICTOR_INFO = {
         "label": "Sex (male vs female)",
         "type": "binary",
         "reference": "female",
+    },
+    "stim_trajectory": {
+        "label": "Stim trajectory (STG vs MTG)",
+        "type": "binary",
+        "reference": "MTG",
     },
     "age": {
         "label": "Age (years)",
@@ -71,40 +77,38 @@ PREDICTOR_INFO = {
 
 MODEL_SPECS = [
     {
-        "slug": "primary_full_sample",
-        "title": "Primary Full-Sample Model",
-        "requested_predictors": ["sex", "age", "stim_hemisphere", "stim_DB"],
+        "slug": "model_1",
+        "title": "Model 1",
+        "requested_predictors": ["sex", "stim_trajectory"],
         "description": (
-            "Primary patient-level model using the full cohort. "
-            "This is the cleanest adjusted test because all four predictors are available "
-            "for all 54 patients."
+            "Patient-level model with sex and stimulation trajectory."
         ),
     },
     {
-        "slug": "ied_sensitivity",
-        "title": "IED Frequency Sensitivity Model",
-        "requested_predictors": ["sex", "age", "stim_hemisphere", "stim_DB", "IED_freq"],
+        "slug": "model_2",
+        "title": "Model 2",
+        "requested_predictors": ["sex", "stim_trajectory", "stim_hemisphere", "stim_DB", "age"],
         "description": (
-            "Sensitivity model adding IED frequency. This costs 10 patients because "
-            "IED_freq is missing for part of the sample."
+            "Patient-level model with sex, stimulation trajectory, stimulation hemisphere, "
+            "stimulation amplitude, and age."
         ),
     },
     {
-        "slug": "memoryz_sensitivity",
-        "title": "Memory_Z Sensitivity Model",
-        "requested_predictors": ["sex", "age", "stim_hemisphere", "stim_DB", "Memory_Z"],
+        "slug": "model_3",
+        "title": "Model 3",
+        "requested_predictors": ["sex", "stim_trajectory", "Memory_Z", "IED_freq"],
         "description": (
-            "Sensitivity model adding pre-surgical baseline memory. The available sample is "
-            "restricted to the studies where Memory_Z exists."
+            "Patient-level model with sex, stimulation trajectory, baseline memory (Memory_Z), "
+            "and IED frequency."
         ),
     },
     {
-        "slug": "complete_case_exploratory",
-        "title": "Complete-Case Exploratory Model",
-        "requested_predictors": ["sex", "age", "stim_hemisphere", "stim_DB", "IED_freq", "Memory_Z"],
+        "slug": "model_4",
+        "title": "Model 4",
+        "requested_predictors": ["sex", "stim_trajectory", "stim_hemisphere", "stim_DB", "age", "Memory_Z", "IED_freq"],
         "description": (
-            "Exploratory complete-case model including all requested between-subject predictors. "
-            "This is the most data-limited model and is shown mainly as a sensitivity check."
+            "Patient-level model including sex, stimulation trajectory, stimulation hemisphere, "
+            "stimulation amplitude, age, baseline memory (Memory_Z), and IED frequency."
         ),
     },
 ]
@@ -163,6 +167,10 @@ def load_behavior() -> pd.DataFrame:
 
     df["sex"] = df["sex"].astype(str).str.strip().str.lower()
     df["stim_hemisphere"] = df["stim_hemisphere"].astype(str).str.strip().str.upper()
+    df["stim_trajectory"] = df["stim_trajectory"].astype(str).str.strip()
+    df["stim_trajectory"] = df["stim_trajectory"].replace({"": np.nan, "NaN": np.nan, "nan": np.nan})
+    df.loc[df["stim_trajectory"].str.contains("frontal", case=False, na=False), "stim_trajectory"] = np.nan
+    df["stim_trajectory"] = df["stim_trajectory"].str.upper()
     df[OUTCOME_COLUMN] = pd.to_numeric(df[OUTCOME_COLUMN], errors="coerce")
     for col in ["age", "stim_DB", "IED_freq", "Memory_Z"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -202,6 +210,8 @@ def build_design_matrix(model_df: pd.DataFrame, predictors: list[str]) -> tuple[
         if info["type"] == "binary":
             if predictor == "sex":
                 encoded = (model_df[predictor] == "male").astype(float).to_numpy()
+            elif predictor == "stim_trajectory":
+                encoded = (model_df[predictor] == "STG").astype(float).to_numpy()
             elif predictor == "stim_hemisphere":
                 encoded = (model_df[predictor] == "R").astype(float).to_numpy()
             else:
@@ -333,7 +343,7 @@ def fit_linear_model(df: pd.DataFrame, spec: dict) -> LinearModelResult:
 
 def compute_missingness(df: pd.DataFrame) -> pd.DataFrame:
     rows = []
-    for column in [OUTCOME_COLUMN, "sex", "age", "stim_hemisphere", "stim_DB", "IED_freq", "Memory_Z"]:
+    for column in [OUTCOME_COLUMN, "sex", "stim_trajectory", "age", "stim_hemisphere", "stim_DB", "IED_freq", "Memory_Z"]:
         rows.append(
             {
                 "Variable": column,
@@ -559,7 +569,7 @@ def add_title_page(pdf: PdfPages, sex_test: dict, primary_result: LinearModelRes
     ax.text(
         0.5,
         0.95,
-        "Between-Subject Variability in Memory Modulation",
+        "Requested Patient-Level Models of Memory Modulation",
         ha="center",
         va="top",
         fontsize=18,
@@ -593,13 +603,10 @@ def add_title_page(pdf: PdfPages, sex_test: dict, primary_result: LinearModelRes
     )
 
     bullets = [
-        f"Unadjusted sex difference: males M = {fmt(sex_test['male_mean'])}, females M = {fmt(sex_test['female_mean'])}, "
-        f"mean difference = {fmt(sex_test['mean_diff'])}, Welch t({fmt(sex_test['df'], 2)}) = {fmt(sex_test['t'])}, p = {p_str(sex_test['p'])}.",
-        f"Primary adjusted model: R2 = {fmt(primary_result.r2)}, adjusted R2 = {fmt(primary_result.adj_r2)}, "
-        f"F({primary_result.df_model}, {primary_result.df_resid}) = {fmt(primary_result.f_stat)}, p = {p_str(primary_result.f_p)}.",
-        "Among the requested between-subject predictors, sex showed the largest unique contribution in the primary model, "
-        "but it remained marginal rather than conventionally significant after adjustment.",
-        "IED_freq and Memory_Z did not improve model fit in the smaller subsets where they were available.",
+        "Model 1 includes sex and stim trajectory only.",
+        "Model 2 includes sex, stim trajectory, stim hemisphere, stim amplitude, and age.",
+        "Model 3 includes sex, stim trajectory, Memory_Z, and IED frequency.",
+        "Model 4 includes sex, stim trajectory, stim hemisphere, stim amplitude, age, Memory_Z, and IED frequency.",
     ]
     ax.text(
         0.08,
@@ -660,6 +667,7 @@ def add_data_page(pdf: PdfPages, missingness: pd.DataFrame, sex_descriptives: pd
         missing_display[["Variable", "Label", "Non-missing", "Missing", "Percent available"]],
         "Table 1\nVariable availability in the behavioral summary file",
         note=(
+            "Stim trajectory is available for 48/54 patients after excluding the 3 frontal-trajectory cases from modeling. "
             "Memory_Z is available for 31/54 patients and is concentrated in the Original, Timing, and Duration cohorts. "
             "IED_freq is available for 44/54 patients."
         ),
@@ -686,8 +694,8 @@ def add_data_page(pdf: PdfPages, missingness: pd.DataFrame, sex_descriptives: pd
         0.49,
         wrap(
             "In the raw patient-level outcome, males showed higher avg_stim_dprime_diff than females. "
-            "That unadjusted difference is useful descriptively, but the primary question is whether it survives "
-            "after accounting for age, stimulation hemisphere, and stimulation amplitude.",
+            "That unadjusted difference is useful descriptively, but the requested models test whether sex and "
+            "stimulation trajectory account for patient-level variation alone or together with the additional covariates.",
             110,
         ),
         fontsize=10.5,
@@ -705,7 +713,11 @@ def add_data_page(pdf: PdfPages, missingness: pd.DataFrame, sex_descriptives: pd
     fig.text(
         0.08,
         0.11,
-        wrap(f"Memory_Z subset composition: {study_line}. Within that subset, stim_DB has no variation: all available cases are 0.5 DB.", 110),
+        wrap(
+            f"Memory_Z subset composition: {study_line}. Frontal trajectories were excluded from the models using stim_trajectory, "
+            "so the trajectory term compares STG against MTG only.",
+            110,
+        ),
         fontsize=9.5,
         family="DejaVu Serif",
     )
@@ -751,8 +763,8 @@ def add_primary_pages(pdf: PdfPages, result: LinearModelResult, sex_test: dict) 
     draw_apa_table(
         ax_summary,
         summary_df,
-        "Table 3\nPrimary model fit summary",
-        note="The primary model includes sex, age, stimulation hemisphere, and stimulation amplitude.",
+        "Table 3\nModel 1 fit summary",
+        note="Model 1 includes sex and stim trajectory.",
         font_size=9.3,
         bbox=[0, 0.18, 1, 0.58],
         col_widths=[0.10, 0.14, 0.12, 0.12, 0.28, 0.12],
@@ -762,8 +774,8 @@ def add_primary_pages(pdf: PdfPages, result: LinearModelResult, sex_test: dict) 
     draw_apa_table(
         ax_coef,
         pretty_coefficients(result),
-        "Table 4\nPrimary model coefficients",
-        note="Female and left hemisphere are the reference groups for binary predictors.",
+        "Table 4\nModel 1 coefficients",
+        note="Female and MTG are the reference groups for binary predictors.",
         font_size=9.0,
         bbox=[0, 0.08, 1, 0.84],
         col_widths=[0.36, 0.11, 0.11, 0.11, 0.11, 0.20],
@@ -773,21 +785,22 @@ def add_primary_pages(pdf: PdfPages, result: LinearModelResult, sex_test: dict) 
     draw_apa_table(
         ax_contrib,
         pretty_contributions(result),
-        "Table 5\nUnique variance contribution in the primary model",
-        note="Delta R2 values reflect the drop in model R2 when each predictor is removed from the primary model.",
+        "Table 5\nUnique variance contribution in Model 1",
+        note="Delta R2 values reflect the drop in model R2 when each predictor is removed from Model 1.",
         font_size=9.0,
         bbox=[0, 0.10, 1, 0.82],
         col_widths=[0.40, 0.16, 0.18, 0.12],
     )
 
     coef_sex = result.coefficients.loc[result.coefficients["term"] == "sex"].iloc[0]
+    coef_traj = result.coefficients.loc[result.coefficients["term"] == "stim_trajectory"].iloc[0]
     narrative = (
-        f"The primary adjusted model was significant overall, F({result.df_model}, {result.df_resid}) = "
+        f"Model 1 was significant overall, F({result.df_model}, {result.df_resid}) = "
         f"{fmt(result.f_stat)}, p = {p_str(result.f_p)}, and accounted for {fmt(result.r2)} of the variance in "
-        f"{OUTCOME_LABEL}. The adjusted coefficient for sex was B = {fmt(coef_sex['B'])} "
+        f"{OUTCOME_LABEL}. The sex coefficient was B = {fmt(coef_sex['B'])} "
         f"(95% CI {ci_str(coef_sex['CI_low'], coef_sex['CI_high'])}), t = {fmt(coef_sex['t'])}, p = {p_str(coef_sex['p'])}. "
-        f"That is smaller than the raw male-female difference of {fmt(sex_test['mean_diff'])}, "
-        f"which indicates part of the unadjusted sex effect overlaps with the other covariates."
+        f"The stim trajectory coefficient was B = {fmt(coef_traj['B'])} "
+        f"(95% CI {ci_str(coef_traj['CI_low'], coef_traj['CI_high'])}), t = {fmt(coef_traj['t'])}, p = {p_str(coef_traj['p'])}."
     )
     fig.text(0.08, 0.37, wrap(narrative, 112), fontsize=10.2, family="DejaVu Serif")
     pdf.savefig(fig, bbox_inches="tight")
@@ -848,7 +861,7 @@ def add_primary_pages(pdf: PdfPages, result: LinearModelResult, sex_test: dict) 
             f"Welch's test on the raw patient-level outcome gave t({fmt(sex_test['df'], 2)}) = {fmt(sex_test['t'])}, "
             f"p = {p_str(sex_test['p'])}, with males higher than females by {fmt(sex_test['mean_diff'])} "
             f"(95% CI {ci_str(sex_test['ci_low'], sex_test['ci_high'])}). "
-            "The adjusted primary model retained sex as the largest unique contributor, but not at p < .05.",
+            "That unadjusted contrast is descriptive only and should be interpreted separately from the four requested multivariable models.",
             110,
         ),
         fontsize=10.5,
@@ -870,7 +883,7 @@ def add_sensitivity_pages(pdf: PdfPages, results: list[LinearModelResult]) -> No
     ax_title.text(
         0.0,
         0.9,
-        "Sensitivity Models",
+        "Model Comparison",
         fontsize=15,
         fontweight="bold",
         family="DejaVu Serif",
@@ -880,9 +893,10 @@ def add_sensitivity_pages(pdf: PdfPages, results: list[LinearModelResult]) -> No
         0.0,
         0.35,
         wrap(
-            "The sensitivity models show what happens when IED_freq and Memory_Z are brought into the analysis. "
-            "The cost is lower N and, for Memory_Z, a narrower set of study cohorts. "
-            "Within those reduced subsets, no additional requested predictor produced a clear signal.",
+            "This page compares the four patient-level models exactly as requested. "
+            "Model 2 adds age, hemisphere, and stim amplitude to Model 1. "
+            "Model 3 instead tests sex and trajectory together with Memory_Z and IED frequency. "
+            "Model 4 includes all requested predictors in the complete-case subset.",
             112,
         ),
         fontsize=10.5,
@@ -893,10 +907,10 @@ def add_sensitivity_pages(pdf: PdfPages, results: list[LinearModelResult]) -> No
     draw_apa_table(
         ax_table,
         summary_df,
-        "Table 6\nComparison of fitted patient-level models",
+        "Table 6\nComparison of the four requested patient-level models",
         note=(
-            "In the Memory_Z-only and complete-case subsets, stim_DB was automatically omitted because all available cases "
-            "were at 0.5 DB, leaving no within-subset variation to estimate its effect."
+            "Predictors with no variation inside a given subset are omitted automatically. "
+            "Because Memory_Z and IED frequency are incomplete, Models 3 and 4 use smaller subsets than Models 1 and 2."
         ),
         font_size=8.2,
         bbox=[0, 0.06, 1, 0.90],
@@ -932,7 +946,7 @@ def add_sensitivity_pages(pdf: PdfPages, results: list[LinearModelResult]) -> No
             ax_coef,
             pretty_coefficients(result),
             f"Table\n{result.title} coefficients",
-            note="Female and left hemisphere are the reference groups when present. Constant predictors in a subset were omitted automatically.",
+            note="Female, MTG trajectory, and left hemisphere are the reference groups when present. Constant predictors in a subset were omitted automatically.",
             font_size=8.9,
             bbox=[0, 0.10, 1, 0.82],
             col_widths=[0.36, 0.11, 0.11, 0.11, 0.11, 0.20],
@@ -982,22 +996,23 @@ def add_conclusion_page(pdf: PdfPages, primary_result: LinearModelResult, result
         va="top",
     )
 
-    primary_sex = primary_result.coefficients.loc[primary_result.coefficients["term"] == "sex"].iloc[0]
-    ied_result = next(item for item in results if item.slug == "ied_sensitivity")
-    mem_result = next(item for item in results if item.slug == "memoryz_sensitivity")
+    model_1 = next(item for item in results if item.slug == "model_1")
+    model_2 = next(item for item in results if item.slug == "model_2")
+    model_3 = next(item for item in results if item.slug == "model_3")
+    model_4 = next(item for item in results if item.slug == "model_4")
+    model_1_sex = model_1.coefficients.loc[model_1.coefficients["term"] == "sex"].iloc[0]
+    model_1_traj = model_1.coefficients.loc[model_1.coefficients["term"] == "stim_trajectory"].iloc[0]
 
     paragraphs = [
         "This file supports a between-subject regression question, not a within-subject MLM question. "
         "The outcome is already one number per patient, so there is no residual subject-level nesting to model.",
-        f"In the full-sample adjusted model, sex was the strongest requested predictor of memory modulation: "
-        f"B = {fmt(primary_sex['B'])}, 95% CI {ci_str(primary_sex['CI_low'], primary_sex['CI_high'])}, "
-        f"p = {p_str(primary_sex['p'])}. That effect was suggestive but not conventionally significant after adjustment.",
-        f"IED_freq did not contribute meaningfully in the 44-patient sensitivity model (model p = {p_str(ied_result.f_p)}), "
-        "and adding it did not improve explanatory power.",
-        f"Memory_Z was only available for 31 patients from a restricted subset of studies, and its coefficient was not significant "
-        f"in that subset (model p = {p_str(mem_result.f_p)}). Because all cases in that subset were at 0.5 DB, stim_DB could not be estimated there.",
-        "If the substantive question is still what explains the high ICC from the original trial-level null model, the next step is to return to the trial-level dataset "
-        "and add these patient-level covariates there as fixed effects in a mixed model. The present report instead shows which patient-level covariates relate to the collapsed patient summary outcome.",
+        f"Model 1 (sex + trajectory) used N = {model_1.n} patients and gave B = {fmt(model_1_sex['B'])} "
+        f"for sex (p = {p_str(model_1_sex['p'])}) and B = {fmt(model_1_traj['B'])} for stim trajectory "
+        f"(p = {p_str(model_1_traj['p'])}).",
+        f"Model 2 added stim hemisphere, stim amplitude, and age in the same trajectory-defined subset (N = {model_2.n}; model p = {p_str(model_2.f_p)}).",
+        f"Model 3 added Memory_Z and IED frequency instead (N = {model_3.n}; model p = {p_str(model_3.f_p)}).",
+        f"Model 4 included all requested predictors in the complete-case subset (N = {model_4.n}; model p = {p_str(model_4.f_p)}). "
+        "If a predictor is constant within a subset, the script omits it automatically rather than estimating an uninterpretable coefficient.",
     ]
 
     y = 0.86
@@ -1018,8 +1033,8 @@ def add_conclusion_page(pdf: PdfPages, primary_result: LinearModelResult, result
         ax,
         0.08,
         0.21,
-        "Among the requested subject-level variables, sex looks like the most plausible contributor to between-subject differences in avg_stim_dprime_diff, "
-        "but the adjusted evidence is modest. Age and hemisphere show smaller nonsignificant trends. Neither stimulation amplitude nor IED_freq explained much variance in these patient-level models.",
+        "Interpret the four models as separate requested patient-level regressions rather than as one stepwise sequence. "
+        "Models 1 and 2 answer the trajectory-focused question in the larger subset, while Models 3 and 4 show what happens once Memory_Z and IED frequency are introduced in smaller subsets.",
         fontsize=11,
     )
     pdf.savefig(fig, bbox_inches="tight")
