@@ -14,12 +14,11 @@ SCRIPT_DIR <- tryCatch(
   }
 )
 
-OUTPUT_ROOT <- file.path(SCRIPT_DIR, "outputs", "retrieval_memory_reports")
+OUTPUT_ROOT <- file.path(SCRIPT_DIR, "outputs", "stim_sex_glmm", "retrieval")
 STATS_ROOT <- file.path(OUTPUT_ROOT, "stats")
 dir.create(STATS_ROOT, recursive = TRUE, showWarnings = FALSE)
 
 MIN_TRIALS <- 10
-CTRL_LMER <- lmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 200000))
 CTRL_GLMER <- glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 200000))
 
 THETA_RANGE <- c(4, 8)
@@ -75,19 +74,13 @@ sort_freq_cols <- function(df, prefix = "diff_Freq_") {
 }
 
 normalize_region_label <- function(region) {
-  if (is.na(region)) {
-    return(NA_character_)
-  }
+  if (is.na(region)) return(NA_character_)
   parts <- strsplit(trimws(region), "_", fixed = TRUE)[[1]]
   parts <- trimws(parts)
   parts <- parts[nzchar(parts)]
-  if (length(parts) == 0) {
-    return(NA_character_)
-  }
+  if (length(parts) == 0) return(NA_character_)
   parts[parts == "ER"] <- "EC"
-  if (length(parts) == 2) {
-    parts <- sort(parts)
-  }
+  if (length(parts) == 2) parts <- sort(parts)
   paste(parts, collapse = "_")
 }
 
@@ -99,17 +92,12 @@ sanitize_name <- function(x) {
   gsub("[^A-Za-z0-9]+", "_", x)
 }
 
-format_p_value <- function(x) {
-  ifelse(is.na(x), "", ifelse(x < 0.001, "<0.001", sprintf("%.3f", x)))
-}
-
-load_behavior <- function() {
+load_sex_map <- function() {
   beh <- read.csv(resolve_behavior_csv(), stringsAsFactors = FALSE)
-  beh <- beh[, c("Patient", "avg_stim_dprime_diff")]
   beh$Patient <- as.character(beh$Patient)
-  beh$avg_stim_dprime_diff <- as.numeric(beh$avg_stim_dprime_diff)
-  beh <- beh[is.finite(beh$avg_stim_dprime_diff), , drop = FALSE]
-  beh[!duplicated(beh$Patient), , drop = FALSE]
+  beh$sex <- tolower(trimws(beh$sex))
+  sex_map <- setNames(beh$sex, beh$Patient)
+  sex_map
 }
 
 filter_balanced <- function(df, measure_label) {
@@ -125,7 +113,7 @@ filter_balanced <- function(df, measure_label) {
   df[df$Patient %in% included, , drop = FALSE]
 }
 
-extract_fixed_effects <- function(model, logistic = FALSE) {
+extract_fixed_effects <- function(model, logistic = TRUE) {
   coef_mat <- as.data.frame(summary(model)$coefficients)
   coef_mat$term <- rownames(coef_mat)
   fixed_terms <- coef_mat$term
@@ -199,7 +187,7 @@ compute_conditional_r2 <- function(model) {
 }
 
 extract_model_compare_table <- function(model_list) {
-  ordered_names <- c("m0", "m1", "m2", "m3", "m4", "m_full")
+  ordered_names <- c("m0", "m1", "m2", "m3", "m4", "m5", "m6", "m_full")
   available <- ordered_names[ordered_names %in% names(model_list)]
   available_models <- unname(model_list[available])
   comp <- as.data.frame(do.call(anova, available_models))
@@ -238,71 +226,6 @@ extract_model_compare_table <- function(model_list) {
   )
 }
 
-prepare_power_data <- function() {
-  path <- file.path(SCRIPT_DIR, "outputs", "csvs", "combined_retrieval_power_all_mlmr_input.csv")
-  dat <- read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
-  dat$Region <- normalize_region_labels(dat$Region)
-  dat <- dat[dat$trial_type != "new" & dat$yes_or_no %in% c("yes", "no"), , drop = FALSE]
-
-  freq_cols <- sort_freq_cols(dat)
-  freqs <- as.numeric(sub("diff_Freq_", "", freq_cols, fixed = TRUE))
-  dat$theta <- rowMeans(dat[, freq_cols[freqs >= THETA_RANGE[1] & freqs <= THETA_RANGE[2]], drop = FALSE], na.rm = TRUE)
-  dat$slow_gamma <- rowMeans(dat[, freq_cols[freqs >= SLOW_GAMMA_RANGE[1] & freqs <= SLOW_GAMMA_RANGE[2]], drop = FALSE], na.rm = TRUE)
-  dat$Accuracy <- ifelse(dat$yes_or_no == "yes", 1, 0)
-  dat$StimCond <- factor(ifelse(dat$trial_type == "nostim", "nostim", "stim"), levels = c("nostim", "stim"))
-  dat$Patient <- as.character(dat$Patient)
-  dat
-}
-
-prepare_coherence_data <- function() {
-  path <- file.path(SCRIPT_DIR, "outputs", "csvs", "combined_retrieval_coherence_all_mlmr_input.csv")
-  dat <- read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
-  dat$Region <- normalize_region_labels(dat$Region)
-  dat <- dat[dat$trial_type != "new" & dat$yes_or_no %in% c("yes", "no"), , drop = FALSE]
-
-  freq_cols <- sort_freq_cols(dat)
-  freqs <- as.numeric(sub("diff_Freq_", "", freq_cols, fixed = TRUE))
-  dat$theta <- rowMeans(dat[, freq_cols[freqs >= THETA_RANGE[1] & freqs <= THETA_RANGE[2]], drop = FALSE], na.rm = TRUE)
-  dat$slow_gamma <- rowMeans(dat[, freq_cols[freqs >= SLOW_GAMMA_RANGE[1] & freqs <= SLOW_GAMMA_RANGE[2]], drop = FALSE], na.rm = TRUE)
-  dat$Accuracy <- ifelse(dat$yes_or_no == "yes", 1, 0)
-  dat$StimCond <- factor(ifelse(dat$trial_type == "nostim", "nostim", "stim"), levels = c("nostim", "stim"))
-  dat$Patient <- as.character(dat$Patient)
-  dat
-}
-
-prepare_pac_data <- function() {
-  path <- file.path(SCRIPT_DIR, "outputs", "csvs", "combined_retrieval_pac_all_mlmr_input.csv")
-  dat <- read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
-  dat$Region <- normalize_region_labels(dat$Region)
-  dat <- dat[dat$trial_type != "new" & dat$yes_or_no %in% c("yes", "no"), , drop = FALSE]
-
-  freq_cols <- sort_freq_cols(dat)
-  freqs <- as.numeric(sub("diff_Freq_", "", freq_cols, fixed = TRUE))
-  dat$slow_gamma_pac <- rowMeans(dat[, freq_cols[freqs >= PAC_SLOW_GAMMA_RANGE[1] & freqs <= PAC_SLOW_GAMMA_RANGE[2]], drop = FALSE], na.rm = TRUE)
-  dat$hfa_pac <- rowMeans(dat[, freq_cols[freqs >= PAC_HFA_RANGE[1] & freqs <= PAC_HFA_RANGE[2]], drop = FALSE], na.rm = TRUE)
-  dat$Accuracy <- ifelse(dat$yes_or_no == "yes", 1, 0)
-  dat$StimCond <- factor(ifelse(dat$trial_type == "nostim", "nostim", "stim"), levels = c("nostim", "stim"))
-  dat$Patient <- as.character(dat$Patient)
-  dat
-}
-
-build_patient_level_rows <- function(df, measure_name, behavior_df) {
-  agg <- df %>%
-    group_by(Patient, Region, StimCond) %>%
-    summarise(
-      theta = if ("theta" %in% names(df)) mean(theta, na.rm = TRUE) else NA_real_,
-      slow_gamma = if ("slow_gamma" %in% names(df)) mean(slow_gamma, na.rm = TRUE) else NA_real_,
-      slow_gamma_pac = if ("slow_gamma_pac" %in% names(df)) mean(slow_gamma_pac, na.rm = TRUE) else NA_real_,
-      hfa_pac = if ("hfa_pac" %in% names(df)) mean(hfa_pac, na.rm = TRUE) else NA_real_,
-      n_trials = n(),
-      .groups = "drop"
-    )
-  out <- left_join(agg, behavior_df, by = "Patient")
-  out <- out[is.finite(out$avg_stim_dprime_diff), , drop = FALSE]
-  out$measure_name <- measure_name
-  out
-}
-
 center_column <- function(x) {
   x - mean(x, na.rm = TRUE)
 }
@@ -310,56 +233,56 @@ center_column <- function(x) {
 standardize_column <- function(x) {
   centered <- x - mean(x, na.rm = TRUE)
   sd_x <- stats::sd(x, na.rm = TRUE)
-  if (!is.finite(sd_x) || sd_x == 0) {
-    return(centered)
-  }
+  if (!is.finite(sd_x) || sd_x == 0) return(centered)
   centered / sd_x
 }
 
-fit_models <- function(data, formula_map, outcome_type) {
-  logistic <- identical(outcome_type, "glmm")
-  fitter <- if (logistic) {
-    function(formula_text) glmer(as.formula(formula_text), data = data, family = binomial, na.action = na.exclude, control = CTRL_GLMER)
-  } else {
-    function(formula_text) lmer(as.formula(formula_text), data = data, na.action = na.exclude, REML = FALSE, control = CTRL_LMER)
-  }
+# ---- Model formulas with Sex ----
+# frequency_across_regions: one band across multiple regions, adding Sex
+fit_freq_across_regions <- function(data) {
+  formula_map <- c(
+    m0    = "Accuracy ~ 1 + (1 | Patient)",
+    m1    = "Accuracy ~ Sex + (1 | Patient)",
+    m2    = "Accuracy ~ Sex + StimCond + (1 | Patient)",
+    m3    = "Accuracy ~ Sex + StimCond + Region + (1 | Patient)",
+    m4    = "Accuracy ~ Sex + StimCond + Region + band_c + (1 | Patient)",
+    m5    = "Accuracy ~ Sex + StimCond + Region + band_c + band_c:Region + (1 | Patient)",
+    m6    = "Accuracy ~ Sex + StimCond + Region + band_c + band_c:Region + band_c:StimCond + (1 | Patient)",
+    m_full = "Accuracy ~ Sex + StimCond + Region + band_c + band_c:Region + band_c:StimCond + StimCond:Sex + band_c:Sex + (1 | Patient)"
+  )
   models <- list()
   for (name in names(formula_map)) {
-    models[[name]] <- fitter(formula_map[[name]])
+    models[[name]] <- glmer(as.formula(formula_map[[name]]), data = data,
+                            family = binomial, na.action = na.exclude,
+                            control = CTRL_GLMER)
   }
   models
 }
 
-fit_freq_across_regions <- function(data, outcome_type) {
-  response <- if (identical(outcome_type, "glmm")) "Accuracy" else "avg_stim_dprime_diff"
+# region_across_bands: one region, both bands, adding Sex
+fit_region_across_bands <- function(data, predictor_a, predictor_b) {
   formula_map <- c(
-    m0 = sprintf("%s ~ 1 + (1 | Patient)", response),
-    m1 = sprintf("%s ~ StimCond + (1 | Patient)", response),
-    m2 = sprintf("%s ~ StimCond + Region + (1 | Patient)", response),
-    m3 = sprintf("%s ~ StimCond + Region + band_c + (1 | Patient)", response),
-    m4 = sprintf("%s ~ StimCond + Region + band_c + band_c:Region + (1 | Patient)", response),
-    m_full = sprintf("%s ~ StimCond + Region + band_c + band_c:Region + band_c:StimCond + (1 | Patient)", response)
+    m0    = "Accuracy ~ 1 + (1 | Patient)",
+    m1    = sprintf("Accuracy ~ Sex + (1 | Patient)"),
+    m2    = sprintf("Accuracy ~ Sex + StimCond + (1 | Patient)"),
+    m3    = sprintf("Accuracy ~ Sex + StimCond + %s + (1 | Patient)", predictor_a),
+    m4    = sprintf("Accuracy ~ Sex + StimCond + %s + %s + (1 | Patient)", predictor_a, predictor_b),
+    m5    = sprintf("Accuracy ~ Sex + StimCond + %s + %s + %s:StimCond + (1 | Patient)", predictor_a, predictor_b, predictor_a),
+    m6    = sprintf("Accuracy ~ Sex + StimCond + %s + %s + %s:StimCond + %s:StimCond + (1 | Patient)", predictor_a, predictor_b, predictor_a, predictor_b),
+    m_full = sprintf("Accuracy ~ Sex + StimCond + %s + %s + %s:StimCond + %s:StimCond + StimCond:Sex + %s:Sex + %s:Sex + (1 | Patient)", predictor_a, predictor_b, predictor_a, predictor_b, predictor_a, predictor_b)
   )
-  fit_models(data, formula_map, outcome_type)
+  models <- list()
+  for (name in names(formula_map)) {
+    models[[name]] <- glmer(as.formula(formula_map[[name]]), data = data,
+                            family = binomial, na.action = na.exclude,
+                            control = CTRL_GLMER)
+  }
+  models
 }
 
-fit_region_across_bands <- function(data, outcome_type, predictor_a, predictor_b) {
-  response <- if (identical(outcome_type, "glmm")) "Accuracy" else "avg_stim_dprime_diff"
-  formula_map <- c(
-    m0 = sprintf("%s ~ 1 + (1 | Patient)", response),
-    m1 = sprintf("%s ~ StimCond + (1 | Patient)", response),
-    m2 = sprintf("%s ~ StimCond + %s + (1 | Patient)", response, predictor_a),
-    m3 = sprintf("%s ~ StimCond + %s + %s + (1 | Patient)", response, predictor_a, predictor_b),
-    m4 = sprintf("%s ~ StimCond + %s + %s + %s:StimCond + (1 | Patient)", response, predictor_a, predictor_b, predictor_a),
-    m_full = sprintf("%s ~ StimCond + %s + %s + %s:StimCond + %s:StimCond + (1 | Patient)", response, predictor_a, predictor_b, predictor_a, predictor_b)
-  )
-  fit_models(data, formula_map, outcome_type)
-}
-
-save_model_outputs <- function(model_list, model_dir, metadata_row, interaction_terms, outcome_type) {
+save_model_outputs <- function(model_list, model_dir, metadata_row, interaction_terms) {
   ensure_dir(model_dir)
-  logistic <- identical(outcome_type, "glmm")
-  coef_df <- extract_fixed_effects(model_list$m_full, logistic = logistic)
+  coef_df <- extract_fixed_effects(model_list$m_full, logistic = TRUE)
   compare_df <- extract_model_compare_table(model_list)
   summary_rows <- coef_df[coef_df$term %in% interaction_terms, , drop = FALSE]
   summary_rows$model_id <- metadata_row$model_id
@@ -367,7 +290,7 @@ save_model_outputs <- function(model_list, model_dir, metadata_row, interaction_
   summary_rows$family_slug <- metadata_row$family_slug
   summary_rows$family_label <- metadata_row$family_label
   summary_rows$target <- metadata_row$target
-  summary_rows$outcome_type <- outcome_type
+  summary_rows$outcome_type <- "glmm"
   summary_rows$n_patients <- metadata_row$n_patients
   summary_rows$n_rows <- metadata_row$n_rows
 
@@ -384,19 +307,66 @@ save_model_outputs <- function(model_list, model_dir, metadata_row, interaction_
   ))
 }
 
-run_frequency_across_regions <- function(measure_slug, family_slug, family_cfg, patient_df, trial_df, predictor_specs) {
+# ---- Data preparation ----
+prepare_power_data <- function(sex_map) {
+  path <- file.path(SCRIPT_DIR, "outputs", "csvs", "combined_retrieval_power_all_mlmr_input.csv")
+  dat <- read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
+  dat$Region <- normalize_region_labels(dat$Region)
+  dat <- dat[dat$trial_type != "new" & dat$yes_or_no %in% c("yes", "no"), , drop = FALSE]
+
+  freq_cols <- sort_freq_cols(dat)
+  freqs <- as.numeric(sub("diff_Freq_", "", freq_cols, fixed = TRUE))
+  dat$theta <- rowMeans(dat[, freq_cols[freqs >= THETA_RANGE[1] & freqs <= THETA_RANGE[2]], drop = FALSE], na.rm = TRUE)
+  dat$slow_gamma <- rowMeans(dat[, freq_cols[freqs >= SLOW_GAMMA_RANGE[1] & freqs <= SLOW_GAMMA_RANGE[2]], drop = FALSE], na.rm = TRUE)
+  dat$Accuracy <- ifelse(dat$yes_or_no == "yes", 1, 0)
+  dat$StimCond <- factor(ifelse(dat$trial_type == "nostim", "nostim", "stim"), levels = c("nostim", "stim"))
+  dat$Patient <- as.character(dat$Patient)
+  dat$Sex <- factor(sex_map[dat$Patient], levels = c("female", "male"))
+  dat <- dat[!is.na(dat$Sex), , drop = FALSE]
+  dat
+}
+
+prepare_coherence_data <- function(sex_map) {
+  path <- file.path(SCRIPT_DIR, "outputs", "csvs", "combined_retrieval_coherence_all_mlmr_input.csv")
+  dat <- read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
+  dat$Region <- normalize_region_labels(dat$Region)
+  dat <- dat[dat$trial_type != "new" & dat$yes_or_no %in% c("yes", "no"), , drop = FALSE]
+
+  freq_cols <- sort_freq_cols(dat)
+  freqs <- as.numeric(sub("diff_Freq_", "", freq_cols, fixed = TRUE))
+  dat$theta <- rowMeans(dat[, freq_cols[freqs >= THETA_RANGE[1] & freqs <= THETA_RANGE[2]], drop = FALSE], na.rm = TRUE)
+  dat$slow_gamma <- rowMeans(dat[, freq_cols[freqs >= SLOW_GAMMA_RANGE[1] & freqs <= SLOW_GAMMA_RANGE[2]], drop = FALSE], na.rm = TRUE)
+  dat$Accuracy <- ifelse(dat$yes_or_no == "yes", 1, 0)
+  dat$StimCond <- factor(ifelse(dat$trial_type == "nostim", "nostim", "stim"), levels = c("nostim", "stim"))
+  dat$Patient <- as.character(dat$Patient)
+  dat$Sex <- factor(sex_map[dat$Patient], levels = c("female", "male"))
+  dat <- dat[!is.na(dat$Sex), , drop = FALSE]
+  dat
+}
+
+prepare_pac_data <- function(sex_map) {
+  path <- file.path(SCRIPT_DIR, "outputs", "csvs", "combined_retrieval_pac_all_mlmr_input.csv")
+  dat <- read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
+  dat$Region <- normalize_region_labels(dat$Region)
+  dat <- dat[dat$trial_type != "new" & dat$yes_or_no %in% c("yes", "no"), , drop = FALSE]
+
+  freq_cols <- sort_freq_cols(dat)
+  freqs <- as.numeric(sub("diff_Freq_", "", freq_cols, fixed = TRUE))
+  dat$slow_gamma_pac <- rowMeans(dat[, freq_cols[freqs >= PAC_SLOW_GAMMA_RANGE[1] & freqs <= PAC_SLOW_GAMMA_RANGE[2]], drop = FALSE], na.rm = TRUE)
+  dat$hfa_pac <- rowMeans(dat[, freq_cols[freqs >= PAC_HFA_RANGE[1] & freqs <= PAC_HFA_RANGE[2]], drop = FALSE], na.rm = TRUE)
+  dat$Accuracy <- ifelse(dat$yes_or_no == "yes", 1, 0)
+  dat$StimCond <- factor(ifelse(dat$trial_type == "nostim", "nostim", "stim"), levels = c("nostim", "stim"))
+  dat$Patient <- as.character(dat$Patient)
+  dat$Sex <- factor(sex_map[dat$Patient], levels = c("female", "male"))
+  dat <- dat[!is.na(dat$Sex), , drop = FALSE]
+  dat
+}
+
+# ---- Run pipelines ----
+run_frequency_across_regions <- function(measure_slug, family_slug, family_cfg, trial_df, predictor_specs) {
   manifest_rows <- list()
   for (band_name in names(predictor_specs)) {
     predictor_col <- predictor_specs[[band_name]]
-
-    patient_sub <- patient_df[patient_df$Region %in% family_cfg$regions, , drop = FALSE]
-    patient_sub <- patient_sub[is.finite(patient_sub[[predictor_col]]), , drop = FALSE]
-    patient_sub$Region <- factor(patient_sub$Region, levels = family_cfg$regions[family_cfg$regions %in% unique(patient_sub$Region)])
-    if (identical(measure_slug, "pac")) {
-      patient_sub$band_c <- standardize_column(patient_sub[[predictor_col]])
-    } else {
-      patient_sub$band_c <- center_column(patient_sub[[predictor_col]])
-    }
 
     trial_sub <- trial_df[trial_df$Region %in% family_cfg$regions, , drop = FALSE]
     trial_sub <- trial_sub[is.finite(trial_sub[[predictor_col]]), , drop = FALSE]
@@ -407,160 +377,153 @@ run_frequency_across_regions <- function(measure_slug, family_slug, family_cfg, 
       trial_sub$band_c <- center_column(trial_sub[[predictor_col]])
     }
 
-    for (outcome_type in c("mlm", "glmm")) {
-      dat <- if (identical(outcome_type, "mlm")) patient_sub else trial_sub
-      if (nrow(dat) < 12 || dplyr::n_distinct(dat$Patient) < 3 || dplyr::n_distinct(dat$StimCond) < 2 || dplyr::n_distinct(dat$Region) < 2) {
-        next
-      }
-
-      model_list <- tryCatch(
-        fit_freq_across_regions(dat, outcome_type),
-        error = function(e) e
-      )
-      if (inherits(model_list, "error")) {
-        message(sprintf("Skipped %s %s %s %s: %s", measure_slug, family_slug, band_name, outcome_type, conditionMessage(model_list)))
-        next
-      }
-
-      model_id <- paste(measure_slug, outcome_type, family_slug, "frequency_across_regions", band_name, sep = "__")
-      metadata_row <- list(
-        model_id = model_id,
-        measure_slug = measure_slug,
-        analysis_type = "frequency_across_regions",
-        family_slug = family_slug,
-        family_label = family_cfg$label,
-        target = band_name,
-        n_patients = dplyr::n_distinct(dat$Patient),
-        n_rows = nrow(dat)
-      )
-      model_dir <- file.path(STATS_ROOT, measure_slug, outcome_type, sanitize_name(model_id))
-      manifest_rows[[length(manifest_rows) + 1]] <- save_model_outputs(
-        model_list = model_list,
-        model_dir = model_dir,
-        metadata_row = metadata_row,
-        interaction_terms = c("band_c:StimCondstim", "StimCondstim:band_c"),
-        outcome_type = outcome_type
-      )
+    if (nrow(trial_sub) < 12 || dplyr::n_distinct(trial_sub$Patient) < 3 ||
+        dplyr::n_distinct(trial_sub$StimCond) < 2 || dplyr::n_distinct(trial_sub$Region) < 2 ||
+        dplyr::n_distinct(trial_sub$Sex) < 2) {
+      next
     }
+
+    model_list <- tryCatch(
+      fit_freq_across_regions(trial_sub),
+      error = function(e) e
+    )
+    if (inherits(model_list, "error")) {
+      message(sprintf("Skipped %s %s %s: %s", measure_slug, family_slug, band_name, conditionMessage(model_list)))
+      next
+    }
+
+    model_id <- paste(measure_slug, "glmm", family_slug, "frequency_across_regions", band_name, sep = "__")
+    metadata_row <- list(
+      model_id = model_id,
+      measure_slug = measure_slug,
+      analysis_type = "frequency_across_regions",
+      family_slug = family_slug,
+      family_label = family_cfg$label,
+      target = band_name,
+      n_patients = dplyr::n_distinct(trial_sub$Patient),
+      n_rows = nrow(trial_sub)
+    )
+    model_dir <- file.path(STATS_ROOT, measure_slug, "glmm", sanitize_name(model_id))
+    manifest_rows[[length(manifest_rows) + 1]] <- save_model_outputs(
+      model_list = model_list,
+      model_dir = model_dir,
+      metadata_row = metadata_row,
+      interaction_terms = c("band_c:StimCondstim", "StimCondstim:band_c",
+                            "StimCondstim:Sexmale", "Sexmale:StimCondstim",
+                            "band_c:Sexmale", "Sexmale:band_c")
+    )
   }
   manifest_rows
 }
 
-run_region_across_bands <- function(measure_slug, family_slug, family_cfg, patient_df, trial_df, predictor_a, predictor_b) {
+run_region_across_bands <- function(measure_slug, family_slug, family_cfg, trial_df, predictor_a, predictor_b) {
   manifest_rows <- list()
   for (region_name in family_cfg$regions) {
-    patient_sub <- patient_df[patient_df$Region == region_name, , drop = FALSE]
     trial_sub <- trial_df[trial_df$Region == region_name, , drop = FALSE]
 
-    for (outcome_type in c("mlm", "glmm")) {
-      dat <- if (identical(outcome_type, "mlm")) patient_sub else trial_sub
-      if (nrow(dat) < 8 || dplyr::n_distinct(dat$Patient) < 3 || dplyr::n_distinct(dat$StimCond) < 2) {
-        next
-      }
-      if (identical(measure_slug, "pac")) {
-        dat[[paste0(predictor_a, "_c")]] <- standardize_column(dat[[predictor_a]])
-        dat[[paste0(predictor_b, "_c")]] <- standardize_column(dat[[predictor_b]])
-      } else {
-        dat[[paste0(predictor_a, "_c")]] <- center_column(dat[[predictor_a]])
-        dat[[paste0(predictor_b, "_c")]] <- center_column(dat[[predictor_b]])
-      }
-      dat <- dat[is.finite(dat[[paste0(predictor_a, "_c")]]) & is.finite(dat[[paste0(predictor_b, "_c")]]), , drop = FALSE]
-      if (nrow(dat) < 8) {
-        next
-      }
-
-      model_list <- tryCatch(
-        fit_region_across_bands(dat, outcome_type, paste0(predictor_a, "_c"), paste0(predictor_b, "_c")),
-        error = function(e) e
-      )
-      if (inherits(model_list, "error")) {
-        message(sprintf("Skipped %s %s %s %s: %s", measure_slug, family_slug, region_name, outcome_type, conditionMessage(model_list)))
-        next
-      }
-
-      model_id <- paste(measure_slug, outcome_type, family_slug, "region_across_bands", region_name, sep = "__")
-      metadata_row <- list(
-        model_id = model_id,
-        measure_slug = measure_slug,
-        analysis_type = "region_across_bands",
-        family_slug = family_slug,
-        family_label = family_cfg$label,
-        target = region_name,
-        n_patients = dplyr::n_distinct(dat$Patient),
-        n_rows = nrow(dat)
-      )
-      model_dir <- file.path(STATS_ROOT, measure_slug, outcome_type, sanitize_name(model_id))
-      manifest_rows[[length(manifest_rows) + 1]] <- save_model_outputs(
-        model_list = model_list,
-        model_dir = model_dir,
-        metadata_row = metadata_row,
-        interaction_terms = c(
-          paste0(predictor_a, "_c:StimCondstim"),
-          paste0("StimCondstim:", predictor_a, "_c"),
-          paste0(predictor_b, "_c:StimCondstim"),
-          paste0("StimCondstim:", predictor_b, "_c")
-        ),
-        outcome_type = outcome_type
-      )
+    if (nrow(trial_sub) < 8 || dplyr::n_distinct(trial_sub$Patient) < 3 ||
+        dplyr::n_distinct(trial_sub$StimCond) < 2 || dplyr::n_distinct(trial_sub$Sex) < 2) {
+      next
     }
+    if (identical(measure_slug, "pac")) {
+      trial_sub[[paste0(predictor_a, "_c")]] <- standardize_column(trial_sub[[predictor_a]])
+      trial_sub[[paste0(predictor_b, "_c")]] <- standardize_column(trial_sub[[predictor_b]])
+    } else {
+      trial_sub[[paste0(predictor_a, "_c")]] <- center_column(trial_sub[[predictor_a]])
+      trial_sub[[paste0(predictor_b, "_c")]] <- center_column(trial_sub[[predictor_b]])
+    }
+    trial_sub <- trial_sub[is.finite(trial_sub[[paste0(predictor_a, "_c")]]) &
+                           is.finite(trial_sub[[paste0(predictor_b, "_c")]]), , drop = FALSE]
+    if (nrow(trial_sub) < 8) next
+
+    model_list <- tryCatch(
+      fit_region_across_bands(trial_sub, paste0(predictor_a, "_c"), paste0(predictor_b, "_c")),
+      error = function(e) e
+    )
+    if (inherits(model_list, "error")) {
+      message(sprintf("Skipped %s %s %s: %s", measure_slug, family_slug, region_name, conditionMessage(model_list)))
+      next
+    }
+
+    model_id <- paste(measure_slug, "glmm", family_slug, "region_across_bands", region_name, sep = "__")
+    pa <- paste0(predictor_a, "_c")
+    pb <- paste0(predictor_b, "_c")
+    metadata_row <- list(
+      model_id = model_id,
+      measure_slug = measure_slug,
+      analysis_type = "region_across_bands",
+      family_slug = family_slug,
+      family_label = family_cfg$label,
+      target = region_name,
+      n_patients = dplyr::n_distinct(trial_sub$Patient),
+      n_rows = nrow(trial_sub)
+    )
+    model_dir <- file.path(STATS_ROOT, measure_slug, "glmm", sanitize_name(model_id))
+    manifest_rows[[length(manifest_rows) + 1]] <- save_model_outputs(
+      model_list = model_list,
+      model_dir = model_dir,
+      metadata_row = metadata_row,
+      interaction_terms = c(
+        paste0(pa, ":StimCondstim"), paste0("StimCondstim:", pa),
+        paste0(pb, ":StimCondstim"), paste0("StimCondstim:", pb),
+        "StimCondstim:Sexmale", "Sexmale:StimCondstim",
+        paste0(pa, ":Sexmale"), paste0("Sexmale:", pa),
+        paste0(pb, ":Sexmale"), paste0("Sexmale:", pb)
+      )
+    )
   }
   manifest_rows
 }
 
 write_measure_manifest <- function(measure_slug, rows) {
-  if (length(rows) == 0) {
-    return(invisible(NULL))
-  }
+  if (length(rows) == 0) return(invisible(NULL))
   manifest_df <- bind_rows(rows)
   measure_dir <- ensure_dir(file.path(STATS_ROOT, measure_slug))
   write.csv(manifest_df, file.path(measure_dir, "manifest.csv"), row.names = FALSE)
 }
 
-run_measure_power <- function(behavior_df) {
-  trial_df <- prepare_power_data()
+run_measure_power <- function(sex_map) {
+  trial_df <- prepare_power_data(sex_map)
   all_rows <- list()
   for (family_slug in names(POWER_FAMILIES)) {
     family_cfg <- POWER_FAMILIES[[family_slug]]
     family_trial_df <- trial_df[trial_df$Region %in% family_cfg$regions, , drop = FALSE]
     family_trial_df <- filter_balanced(family_trial_df, sprintf("power_%s", family_slug))
-    patient_df <- build_patient_level_rows(family_trial_df, "power", behavior_df)
     family_rows <- c(
-      run_frequency_across_regions("power", family_slug, family_cfg, patient_df, family_trial_df, c(theta = "theta", slow_gamma = "slow_gamma")),
-      run_region_across_bands("power", family_slug, family_cfg, patient_df, family_trial_df, "theta", "slow_gamma")
+      run_frequency_across_regions("power", family_slug, family_cfg, family_trial_df, c(theta = "theta", slow_gamma = "slow_gamma")),
+      run_region_across_bands("power", family_slug, family_cfg, family_trial_df, "theta", "slow_gamma")
     )
     all_rows <- c(all_rows, family_rows)
   }
   write_measure_manifest("power", all_rows)
 }
 
-run_measure_coherence <- function(behavior_df) {
-  trial_df <- prepare_coherence_data()
+run_measure_coherence <- function(sex_map) {
+  trial_df <- prepare_coherence_data(sex_map)
   all_rows <- list()
   for (family_slug in names(PAIR_FAMILIES)) {
     family_cfg <- PAIR_FAMILIES[[family_slug]]
     family_trial_df <- trial_df[trial_df$Region %in% family_cfg$regions, , drop = FALSE]
     family_trial_df <- filter_balanced(family_trial_df, sprintf("coherence_%s", family_slug))
-    patient_df <- build_patient_level_rows(family_trial_df, "coherence", behavior_df)
     family_rows <- c(
-      run_frequency_across_regions("coherence", family_slug, family_cfg, patient_df, family_trial_df, c(theta = "theta", slow_gamma = "slow_gamma")),
-      run_region_across_bands("coherence", family_slug, family_cfg, patient_df, family_trial_df, "theta", "slow_gamma")
+      run_frequency_across_regions("coherence", family_slug, family_cfg, family_trial_df, c(theta = "theta", slow_gamma = "slow_gamma")),
+      run_region_across_bands("coherence", family_slug, family_cfg, family_trial_df, "theta", "slow_gamma")
     )
     all_rows <- c(all_rows, family_rows)
   }
   write_measure_manifest("coherence", all_rows)
 }
 
-run_measure_pac <- function(behavior_df) {
-  trial_df <- prepare_pac_data()
+run_measure_pac <- function(sex_map) {
+  trial_df <- prepare_pac_data(sex_map)
   all_rows <- list()
   for (family_slug in names(PAIR_FAMILIES)) {
     family_cfg <- PAIR_FAMILIES[[family_slug]]
     family_trial_df <- trial_df[trial_df$Region %in% family_cfg$regions, , drop = FALSE]
     family_trial_df <- filter_balanced(family_trial_df, sprintf("pac_%s", family_slug))
-    patient_df <- build_patient_level_rows(family_trial_df, "pac", behavior_df)
     family_rows <- c(
-      run_frequency_across_regions("pac", family_slug, family_cfg, patient_df, family_trial_df, c(slow_gamma_pac = "slow_gamma_pac", hfa_pac = "hfa_pac")),
-      run_region_across_bands("pac", family_slug, family_cfg, patient_df, family_trial_df, "slow_gamma_pac", "hfa_pac")
+      run_frequency_across_regions("pac", family_slug, family_cfg, family_trial_df, c(slow_gamma_pac = "slow_gamma_pac", hfa_pac = "hfa_pac")),
+      run_region_across_bands("pac", family_slug, family_cfg, family_trial_df, "slow_gamma_pac", "hfa_pac")
     )
     all_rows <- c(all_rows, family_rows)
   }
@@ -568,11 +531,11 @@ run_measure_pac <- function(behavior_df) {
 }
 
 main <- function() {
-  behavior_df <- load_behavior()
-  run_measure_power(behavior_df)
-  run_measure_coherence(behavior_df)
-  run_measure_pac(behavior_df)
-  message(sprintf("Wrote retrieval model stats to %s", STATS_ROOT))
+  sex_map <- load_sex_map()
+  run_measure_power(sex_map)
+  run_measure_coherence(sex_map)
+  run_measure_pac(sex_map)
+  message(sprintf("Wrote retrieval stim x sex GLMM stats to %s", STATS_ROOT))
 }
 
 main()

@@ -1,0 +1,31 @@
+Balanced Behavioral Subjects Summary
+================================================================================
+Total behavioral rows: 54
+Included balanced subjects: 43
+Criterion: Remembered >= 10 and Forgotten >= 10
+
+Subjects supplemented from original day-2 log files: 8
+  amyg001: remembered=16, forgotten=44, valid_old_trials=60, dropped_missing_info=50, log=amyg001_day2.log
+  amyg002: remembered=67, forgotten=13, valid_old_trials=80, dropped_missing_info=1, log=amyg002_day2.log
+  amyg015: remembered=39, forgotten=41, valid_old_trials=80, dropped_missing_info=1, log=amyg015_day2.log
+  amyg016: remembered=59, forgotten=21, valid_old_trials=80, dropped_missing_info=1, log=amyg016_day2.log
+  amyg042: remembered=52, forgotten=68, valid_old_trials=120, dropped_missing_info=1, log=amyg042_Ramyg_day2.log
+  amyg047: remembered=181, forgotten=19, valid_old_trials=200, dropped_missing_info=1, log=amyg047_Lamyg_day2.log
+  amyg053: remembered=195, forgotten=5, valid_old_trials=200, dropped_missing_info=1, log=amyg053_Ramyg_day2.log
+  amyg060: remembered=160, forgotten=40, valid_old_trials=200, dropped_missing_info=1, log=amyg060_Lamyg_day2.log
+
+Excluded for low trial counts: 11
+  BJH025: remembered=74, forgotten=6, source=existing_subject_count_csv
+  BJH027: remembered=72, forgotten=8, source=existing_subject_count_csv
+  BJH029: remembered=71, forgotten=9, source=existing_subject_count_csv
+  BJH040: remembered=77, forgotten=3, source=existing_subject_count_csv
+  BJH042: remembered=73, forgotten=6, source=existing_subject_count_csv
+  SLCH018: remembered=73, forgotten=7, source=existing_subject_count_csv
+  amyg003: remembered=9, forgotten=71, source=existing_subject_count_csv
+  amyg008: remembered=74, forgotten=6, source=existing_subject_count_csv
+  amyg009: remembered=73, forgotten=7, source=existing_subject_count_csv
+  amyg033: remembered=115, forgotten=5, source=existing_subject_count_csv
+  amyg053: remembered=195, forgotten=5, source=manual_day2_log
+
+Excluded because no subject count row was available: 0
+  None

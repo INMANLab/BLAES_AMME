@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Build APA-formatted PDF reports for retrieval memory analyses.
+Build APA-formatted PDF reports for encoding memory analyses.
 Matches the layout of Does_Baseline_Neural_Activity_x_Stim_Impact_Memory_Encoding.
 
 Structure per measure (Power / Coherence / PAC):
@@ -24,8 +24,8 @@ from fpdf import FPDF
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-STATS_ROOT = SCRIPT_DIR / "outputs" / "retrieval_memory_reports" / "stats"
-OUTPUT_ROOT = SCRIPT_DIR / "outputs" / "retrieval_memory_reports"
+STATS_ROOT = SCRIPT_DIR / "outputs" / "encoding_memory_reports" / "stats"
+OUTPUT_ROOT = SCRIPT_DIR / "outputs" / "encoding_memory_reports"
 
 MEASURE_LABELS = {"power": "Power", "coherence": "Coherence", "pac": "PAC"}
 
@@ -403,8 +403,8 @@ def write_report(measure_slug, outcome_type):
     outcome_cfg = OUTCOME_LABELS[outcome_type]
     est_label = outcome_cfg["estimate_label"]
     stat_label = outcome_cfg["stat_label"]
-    report_title = f"Retrieval {measure_label} - {outcome_cfg['title']}"
-    out_path = OUTPUT_ROOT / f"Retrieval_{measure_label}_{outcome_cfg['title']}_Report.pdf"
+    report_title = f"Encoding {measure_label} - {outcome_cfg['title']}"
+    out_path = OUTPUT_ROOT / f"Encoding_{measure_label}_{outcome_cfg['title']}_Report.pdf"
 
     # Split manifest by analysis type
     per_region = report_manifest[
@@ -422,13 +422,13 @@ def write_report(measure_slug, outcome_type):
     # ====================================================================
     pdf.big_title(
         f"Does Baseline {measure_label} x Stimulation\n"
-        "Predict Retrieval Memory?")
-    pdf.subtitle(f"Retrieval Phase - {outcome_cfg['title']} - Balanced Trials")
+        "Predict Encoding Memory?")
+    pdf.subtitle(f"Encoding Phase - {outcome_cfg['title']} - Balanced Trials")
 
     pdf.section_title("1. Overview")
     pdf.body_text(
         f"This report tests whether baseline neural {measure_label.lower()} "
-        "during retrieval differentially predicts memory accuracy as a "
+        "during encoding differentially predicts memory accuracy as a "
         "function of stimulation condition (BLA theta-modulated gamma "
         "stimulation vs. no stimulation).")
     pdf.body_text(
@@ -745,7 +745,7 @@ def write_report(measure_slug, outcome_type):
     # Opening summary
     pdf.body_text(
         f"This report examined whether baseline {measure_label.lower()} "
-        "during the retrieval phase interacted with BLA stimulation "
+        "during the encoding phase interacted with BLA stimulation "
         "condition to predict trial-level memory accuracy. A total of "
         f"{n_models} GLMMs were fit across per-region and across-region "
         f"analyses (N = {n_range} patients per model, after balanced-trials "
@@ -768,7 +768,7 @@ def write_report(measure_slug, outcome_type):
         pdf.body_text(
             f"No {measure_label.lower()} x stimulation interactions reached "
             "statistical significance. This suggests that baseline "
-            f"{measure_label.lower()} during retrieval did not differentially "
+            f"{measure_label.lower()} during encoding did not differentially "
             "predict memory accuracy as a function of whether BLA stimulation "
             "was delivered. The relationship between neural activity and "
             "memory was similar regardless of stimulation condition.")
@@ -814,10 +814,10 @@ def write_report(measure_slug, outcome_type):
         pdf.body_text(
             f"Across all {n_models} models, no {measure_label.lower()} x "
             "stimulation interactions reached significance. Baseline "
-            f"{measure_label.lower()} during retrieval does not appear to "
+            f"{measure_label.lower()} during encoding does not appear to "
             "modulate the effect of BLA stimulation on memory accuracy. "
             "This null finding suggests that the impact of stimulation on "
-            "retrieval-phase memory is not contingent on the pre-existing "
+            "encoding-phase memory is not contingent on the pre-existing "
             f"level of {measure_label.lower()} in the tested regions and "
             "frequency bands.")
 

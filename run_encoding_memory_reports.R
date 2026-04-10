@@ -14,7 +14,7 @@ SCRIPT_DIR <- tryCatch(
   }
 )
 
-OUTPUT_ROOT <- file.path(SCRIPT_DIR, "outputs", "retrieval_memory_reports")
+OUTPUT_ROOT <- file.path(SCRIPT_DIR, "outputs", "encoding_memory_reports")
 STATS_ROOT <- file.path(OUTPUT_ROOT, "stats")
 dir.create(STATS_ROOT, recursive = TRUE, showWarnings = FALSE)
 
@@ -239,7 +239,7 @@ extract_model_compare_table <- function(model_list) {
 }
 
 prepare_power_data <- function() {
-  path <- file.path(SCRIPT_DIR, "outputs", "csvs", "combined_retrieval_power_all_mlmr_input.csv")
+  path <- file.path(SCRIPT_DIR, "outputs", "csvs", "combined_encoding_power_all_mlmr_input.csv")
   dat <- read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
   dat$Region <- normalize_region_labels(dat$Region)
   dat <- dat[dat$trial_type != "new" & dat$yes_or_no %in% c("yes", "no"), , drop = FALSE]
@@ -255,7 +255,7 @@ prepare_power_data <- function() {
 }
 
 prepare_coherence_data <- function() {
-  path <- file.path(SCRIPT_DIR, "outputs", "csvs", "combined_retrieval_coherence_all_mlmr_input.csv")
+  path <- file.path(SCRIPT_DIR, "outputs", "csvs", "combined_encoding_coherence_all_mlmr_input.csv")
   dat <- read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
   dat$Region <- normalize_region_labels(dat$Region)
   dat <- dat[dat$trial_type != "new" & dat$yes_or_no %in% c("yes", "no"), , drop = FALSE]
@@ -271,7 +271,7 @@ prepare_coherence_data <- function() {
 }
 
 prepare_pac_data <- function() {
-  path <- file.path(SCRIPT_DIR, "outputs", "csvs", "combined_retrieval_pac_all_mlmr_input.csv")
+  path <- file.path(SCRIPT_DIR, "outputs", "csvs", "combined_encoding_pac_all_mlmr_input.csv")
   dat <- read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
   dat$Region <- normalize_region_labels(dat$Region)
   dat <- dat[dat$trial_type != "new" & dat$yes_or_no %in% c("yes", "no"), , drop = FALSE]
@@ -407,7 +407,7 @@ run_frequency_across_regions <- function(measure_slug, family_slug, family_cfg, 
       trial_sub$band_c <- center_column(trial_sub[[predictor_col]])
     }
 
-    for (outcome_type in c("mlm", "glmm")) {
+    for (outcome_type in c("glmm")) {
       dat <- if (identical(outcome_type, "mlm")) patient_sub else trial_sub
       if (nrow(dat) < 12 || dplyr::n_distinct(dat$Patient) < 3 || dplyr::n_distinct(dat$StimCond) < 2 || dplyr::n_distinct(dat$Region) < 2) {
         next
@@ -452,7 +452,7 @@ run_region_across_bands <- function(measure_slug, family_slug, family_cfg, patie
     patient_sub <- patient_df[patient_df$Region == region_name, , drop = FALSE]
     trial_sub <- trial_df[trial_df$Region == region_name, , drop = FALSE]
 
-    for (outcome_type in c("mlm", "glmm")) {
+    for (outcome_type in c("glmm")) {
       dat <- if (identical(outcome_type, "mlm")) patient_sub else trial_sub
       if (nrow(dat) < 8 || dplyr::n_distinct(dat$Patient) < 3 || dplyr::n_distinct(dat$StimCond) < 2) {
         next
@@ -572,7 +572,7 @@ main <- function() {
   run_measure_power(behavior_df)
   run_measure_coherence(behavior_df)
   run_measure_pac(behavior_df)
-  message(sprintf("Wrote retrieval model stats to %s", STATS_ROOT))
+  message(sprintf("Wrote encoding model stats to %s", STATS_ROOT))
 }
 
 main()

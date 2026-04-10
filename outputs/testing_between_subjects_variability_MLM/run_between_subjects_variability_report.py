@@ -32,6 +32,7 @@ OUTPUT_DIR = Path(__file__).resolve().parent
 OUTPUT_PDF = OUTPUT_DIR / "between_subjects_variability_report.pdf"
 
 BEHAVIOR_CANDIDATES = [
+    BASE_DIR.parent / "AMMEBLAES_includedpts_firstsession_behavioral.csv",
     BASE_DIR / "AMMEBLAES_includedpts_firstsession_behavioral.csv",
     BASE_DIR / "behavioral figures" / "AMMEBLAES_includedpts_firstsession_behavioral.csv",
 ]
@@ -45,6 +46,11 @@ PREDICTOR_INFO = {
         "label": "Sex (male vs female)",
         "type": "binary",
         "reference": "female",
+    },
+    "stim_trajectory": {
+        "label": "Stim trajectory (STG vs MTG; frontal excluded)",
+        "type": "binary",
+        "reference": "MTG",
     },
     "age": {
         "label": "Age (years)",
@@ -73,35 +79,36 @@ MODEL_SPECS = [
     {
         "slug": "primary_full_sample",
         "title": "Primary Full-Sample Model",
-        "requested_predictors": ["sex", "age", "stim_hemisphere", "stim_DB"],
+        "requested_predictors": ["sex", "stim_trajectory", "age", "stim_hemisphere", "stim_DB"],
         "description": (
             "Primary patient-level model using the full cohort. "
-            "This is the cleanest adjusted test because all four predictors are available "
-            "for all 54 patients."
+            "This is the cleanest adjusted test because sex, age, stimulation hemisphere, "
+            "and stimulation amplitude are available broadly, and stimulation trajectory is "
+            "available for the non-frontal MTG/STG subset."
         ),
     },
     {
         "slug": "ied_sensitivity",
         "title": "IED Frequency Sensitivity Model",
-        "requested_predictors": ["sex", "age", "stim_hemisphere", "stim_DB", "IED_freq"],
+        "requested_predictors": ["sex", "stim_trajectory", "age", "stim_hemisphere", "stim_DB", "IED_freq"],
         "description": (
-            "Sensitivity model adding IED frequency. This costs 10 patients because "
-            "IED_freq is missing for part of the sample."
+            "Sensitivity model adding IED frequency after the primary covariates. "
+            "This costs additional patients because IED_freq is missing for part of the sample."
         ),
     },
     {
         "slug": "memoryz_sensitivity",
         "title": "Memory_Z Sensitivity Model",
-        "requested_predictors": ["sex", "age", "stim_hemisphere", "stim_DB", "Memory_Z"],
+        "requested_predictors": ["sex", "stim_trajectory", "age", "stim_hemisphere", "stim_DB", "Memory_Z"],
         "description": (
-            "Sensitivity model adding pre-surgical baseline memory. The available sample is "
-            "restricted to the studies where Memory_Z exists."
+            "Sensitivity model adding pre-surgical baseline memory after the primary covariates. "
+            "The available sample is restricted to the studies where Memory_Z exists."
         ),
     },
     {
         "slug": "complete_case_exploratory",
         "title": "Complete-Case Exploratory Model",
-        "requested_predictors": ["sex", "age", "stim_hemisphere", "stim_DB", "IED_freq", "Memory_Z"],
+        "requested_predictors": ["sex", "stim_trajectory", "age", "stim_hemisphere", "stim_DB", "IED_freq", "Memory_Z"],
         "description": (
             "Exploratory complete-case model including all requested between-subject predictors. "
             "This is the most data-limited model and is shown mainly as a sensitivity check."
@@ -128,6 +135,7 @@ class LinearModelResult:
     sigma: float
     coefficients: pd.DataFrame
     contributions: pd.DataFrame
+    sequential_steps: pd.DataFrame
     data: pd.DataFrame
 
 
@@ -163,6 +171,14 @@ def load_behavior() -> pd.DataFrame:
 
     df["sex"] = df["sex"].astype(str).str.strip().str.lower()
     df["stim_hemisphere"] = df["stim_hemisphere"].astype(str).str.strip().str.upper()
+    df["stim_trajectory"] = (
+        df["stim_trajectory"]
+        .astype(str)
+        .str.strip()
+        .replace({"": np.nan, "NaN": np.nan, "nan": np.nan})
+    )
+    df.loc[df["stim_trajectory"].str.contains("frontal", case=False, na=False), "stim_trajectory"] = np.nan
+    df["stim_trajectory"] = df["stim_trajectory"].str.upper()
     df[OUTCOME_COLUMN] = pd.to_numeric(df[OUTCOME_COLUMN], errors="coerce")
     for col in ["age", "stim_DB", "IED_freq", "Memory_Z"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -202,6 +218,8 @@ def build_design_matrix(model_df: pd.DataFrame, predictors: list[str]) -> tuple[
         if info["type"] == "binary":
             if predictor == "sex":
                 encoded = (model_df[predictor] == "male").astype(float).to_numpy()
+            elif predictor == "stim_trajectory":
+                encoded = (model_df[predictor] == "STG").astype(float).to_numpy()
             elif predictor == "stim_hemisphere":
                 encoded = (model_df[predictor] == "R").astype(float).to_numpy()
             else:
@@ -290,6 +308,33 @@ def fit_linear_model(df: pd.DataFrame, spec: dict) -> LinearModelResult:
     y = design_df[OUTCOME_COLUMN].to_numpy(dtype=float)
     fit_stats, coefficients = fit_ols_from_matrix(y, X, term_names)
 
+    sequential_rows = []
+    prev_X, prev_names = build_design_matrix(design_df, [])
+    prev_fit_stats, _ = fit_ols_from_matrix(y, prev_X, prev_names)
+    for step_index, predictor in enumerate(included_predictors, start=1):
+        current_predictors = included_predictors[:step_index]
+        step_X, step_names = build_design_matrix(design_df, current_predictors)
+        step_fit_stats, _ = fit_ols_from_matrix(y, step_X, step_names)
+        delta_r2 = step_fit_stats["r2"] - prev_fit_stats["r2"]
+        f_change = ((prev_fit_stats["sse"] - step_fit_stats["sse"]) / 1.0) / (
+            step_fit_stats["sse"] / step_fit_stats["df_resid"]
+        )
+        p_change = 1 - stats.f.cdf(f_change, 1, step_fit_stats["df_resid"])
+        sequential_rows.append(
+            {
+                "step": step_index,
+                "predictor": predictor,
+                "label": PREDICTOR_INFO[predictor]["label"],
+                "model_predictors": "; ".join(PREDICTOR_INFO[item]["label"] for item in current_predictors),
+                "R2": step_fit_stats["r2"],
+                "Adj_R2": step_fit_stats["adj_r2"],
+                "Delta_R2": delta_r2,
+                "F_change": f_change,
+                "p_change": p_change,
+            }
+        )
+        prev_fit_stats = step_fit_stats
+
     contributions = []
     for predictor in included_predictors:
         reduced_predictors = [item for item in included_predictors if item != predictor]
@@ -327,13 +372,14 @@ def fit_linear_model(df: pd.DataFrame, spec: dict) -> LinearModelResult:
         sigma=float(fit_stats["sigma"]),
         coefficients=coefficients,
         contributions=pd.DataFrame(contributions),
+        sequential_steps=pd.DataFrame(sequential_rows),
         data=model_df.reset_index(drop=True),
     )
 
 
 def compute_missingness(df: pd.DataFrame) -> pd.DataFrame:
     rows = []
-    for column in [OUTCOME_COLUMN, "sex", "age", "stim_hemisphere", "stim_DB", "IED_freq", "Memory_Z"]:
+    for column in [OUTCOME_COLUMN, "sex", "stim_trajectory", "age", "stim_hemisphere", "stim_DB", "IED_freq", "Memory_Z"]:
         rows.append(
             {
                 "Variable": column,
@@ -442,6 +488,19 @@ def pretty_contributions(result: LinearModelResult) -> pd.DataFrame:
     return out[["Predictor", "Delta R2", "F change", "p"]]
 
 
+def pretty_sequential_steps(result: LinearModelResult) -> pd.DataFrame:
+    if result.sequential_steps.empty:
+        return pd.DataFrame(columns=["Step", "Added predictor", "Model R2", "Delta R2", "F change", "p"])
+    out = result.sequential_steps.copy()
+    out["Step"] = out["step"].astype(int)
+    out["Added predictor"] = out["label"]
+    out["Model R2"] = out["R2"].map(fmt)
+    out["Delta R2"] = out["Delta_R2"].map(fmt)
+    out["F change"] = out["F_change"].map(fmt)
+    out["p"] = out["p_change"].map(p_str)
+    return out[["Step", "Added predictor", "Model R2", "Delta R2", "F change", "p"]]
+
+
 def export_tables(
     missingness: pd.DataFrame,
     sex_descriptives: pd.DataFrame,
@@ -455,6 +514,10 @@ def export_tables(
     for result in results:
         pretty_coefficients(result).to_csv(
             OUTPUT_DIR / f"{result.slug}_coefficients.csv",
+            index=False,
+        )
+        pretty_sequential_steps(result).to_csv(
+            OUTPUT_DIR / f"{result.slug}_sequential_steps.csv",
             index=False,
         )
         pretty_contributions(result).to_csv(
@@ -556,6 +619,7 @@ def draw_apa_table(
 
 def add_title_page(pdf: PdfPages, sex_test: dict, primary_result: LinearModelResult) -> None:
     fig, ax = start_page()
+    primary_steps = primary_result.sequential_steps.set_index("predictor", drop=False)
     ax.text(
         0.5,
         0.95,
@@ -597,8 +661,10 @@ def add_title_page(pdf: PdfPages, sex_test: dict, primary_result: LinearModelRes
         f"mean difference = {fmt(sex_test['mean_diff'])}, Welch t({fmt(sex_test['df'], 2)}) = {fmt(sex_test['t'])}, p = {p_str(sex_test['p'])}.",
         f"Primary adjusted model: R2 = {fmt(primary_result.r2)}, adjusted R2 = {fmt(primary_result.adj_r2)}, "
         f"F({primary_result.df_model}, {primary_result.df_resid}) = {fmt(primary_result.f_stat)}, p = {p_str(primary_result.f_p)}.",
-        "Among the requested between-subject predictors, sex showed the largest unique contribution in the primary model, "
-        "but it remained marginal rather than conventionally significant after adjustment.",
+        f"Sequential build: sex entered first (model R2 = {fmt(primary_steps.loc['sex', 'R2'])}, "
+        f"step p = {p_str(primary_steps.loc['sex', 'p_change'])}); stim trajectory entered second "
+        f"(delta R2 = {fmt(primary_steps.loc['stim_trajectory', 'Delta_R2'])}, "
+        f"step p = {p_str(primary_steps.loc['stim_trajectory', 'p_change'])}).",
         "IED_freq and Memory_Z did not improve model fit in the smaller subsets where they were available.",
     ]
     ax.text(
@@ -660,6 +726,7 @@ def add_data_page(pdf: PdfPages, missingness: pd.DataFrame, sex_descriptives: pd
         missing_display[["Variable", "Label", "Non-missing", "Missing", "Percent available"]],
         "Table 1\nVariable availability in the behavioral summary file",
         note=(
+            "Stim trajectory is available for 48/54 patients after excluding the 3 frontal-trajectory cases from modeling. "
             "Memory_Z is available for 31/54 patients and is concentrated in the Original, Timing, and Duration cohorts. "
             "IED_freq is available for 44/54 patients."
         ),
@@ -687,7 +754,7 @@ def add_data_page(pdf: PdfPages, missingness: pd.DataFrame, sex_descriptives: pd
         wrap(
             "In the raw patient-level outcome, males showed higher avg_stim_dprime_diff than females. "
             "That unadjusted difference is useful descriptively, but the primary question is whether it survives "
-            "after accounting for age, stimulation hemisphere, and stimulation amplitude.",
+            "after accounting for stimulation trajectory, age, stimulation hemisphere, and stimulation amplitude.",
             110,
         ),
         fontsize=10.5,
@@ -705,7 +772,11 @@ def add_data_page(pdf: PdfPages, missingness: pd.DataFrame, sex_descriptives: pd
     fig.text(
         0.08,
         0.11,
-        wrap(f"Memory_Z subset composition: {study_line}. Within that subset, stim_DB has no variation: all available cases are 0.5 DB.", 110),
+        wrap(
+            f"Memory_Z subset composition: {study_line}. Within that subset, stim_DB has no variation: all available cases are 0.5 DB. "
+            "Stim trajectory is modeled as STG versus MTG, with frontal trajectories excluded to match the separate trajectory test.",
+            110,
+        ),
         fontsize=9.5,
         family="DejaVu Serif",
     )
@@ -752,7 +823,7 @@ def add_primary_pages(pdf: PdfPages, result: LinearModelResult, sex_test: dict) 
         ax_summary,
         summary_df,
         "Table 3\nPrimary model fit summary",
-        note="The primary model includes sex, age, stimulation hemisphere, and stimulation amplitude.",
+        note="The primary model includes sex first, then stim trajectory, age, stimulation hemisphere, and stimulation amplitude.",
         font_size=9.3,
         bbox=[0, 0.18, 1, 0.58],
         col_widths=[0.10, 0.14, 0.12, 0.12, 0.28, 0.12],
@@ -763,7 +834,7 @@ def add_primary_pages(pdf: PdfPages, result: LinearModelResult, sex_test: dict) 
         ax_coef,
         pretty_coefficients(result),
         "Table 4\nPrimary model coefficients",
-        note="Female and left hemisphere are the reference groups for binary predictors.",
+        note="Female, MTG trajectory, and left hemisphere are the reference groups for binary predictors.",
         font_size=9.0,
         bbox=[0, 0.08, 1, 0.84],
         col_widths=[0.36, 0.11, 0.11, 0.11, 0.11, 0.20],
@@ -772,22 +843,27 @@ def add_primary_pages(pdf: PdfPages, result: LinearModelResult, sex_test: dict) 
     ax_contrib = fig.add_axes([0.08, 0.11, 0.84, 0.23])
     draw_apa_table(
         ax_contrib,
-        pretty_contributions(result),
-        "Table 5\nUnique variance contribution in the primary model",
-        note="Delta R2 values reflect the drop in model R2 when each predictor is removed from the primary model.",
-        font_size=9.0,
+        pretty_sequential_steps(result),
+        "Table 5\nSequential model building in the requested order",
+        note="Each row shows the change produced by adding that predictor after all predictors above it were already in the model.",
+        font_size=8.4,
         bbox=[0, 0.10, 1, 0.82],
-        col_widths=[0.40, 0.16, 0.18, 0.12],
+        col_widths=[0.08, 0.36, 0.14, 0.14, 0.14, 0.10],
     )
 
     coef_sex = result.coefficients.loc[result.coefficients["term"] == "sex"].iloc[0]
+    coef_traj = result.coefficients.loc[result.coefficients["term"] == "stim_trajectory"].iloc[0]
+    sex_step = result.sequential_steps.loc[result.sequential_steps["predictor"] == "sex"].iloc[0]
+    traj_step = result.sequential_steps.loc[result.sequential_steps["predictor"] == "stim_trajectory"].iloc[0]
     narrative = (
         f"The primary adjusted model was significant overall, F({result.df_model}, {result.df_resid}) = "
         f"{fmt(result.f_stat)}, p = {p_str(result.f_p)}, and accounted for {fmt(result.r2)} of the variance in "
-        f"{OUTCOME_LABEL}. The adjusted coefficient for sex was B = {fmt(coef_sex['B'])} "
-        f"(95% CI {ci_str(coef_sex['CI_low'], coef_sex['CI_high'])}), t = {fmt(coef_sex['t'])}, p = {p_str(coef_sex['p'])}. "
-        f"That is smaller than the raw male-female difference of {fmt(sex_test['mean_diff'])}, "
-        f"which indicates part of the unadjusted sex effect overlaps with the other covariates."
+        f"{OUTCOME_LABEL}. In the requested sequence, sex entered first and produced model R2 = {fmt(sex_step['R2'])} "
+        f"(step p = {p_str(sex_step['p_change'])}); adding stim trajectory next increased R2 by {fmt(traj_step['Delta_R2'])} "
+        f"(step p = {p_str(traj_step['p_change'])}). The adjusted coefficient for sex was B = {fmt(coef_sex['B'])} "
+        f"(95% CI {ci_str(coef_sex['CI_low'], coef_sex['CI_high'])}), t = {fmt(coef_sex['t'])}, p = {p_str(coef_sex['p'])}, "
+        f"and the adjusted coefficient for STG versus MTG trajectory was B = {fmt(coef_traj['B'])} "
+        f"(95% CI {ci_str(coef_traj['CI_low'], coef_traj['CI_high'])}), t = {fmt(coef_traj['t'])}, p = {p_str(coef_traj['p'])}."
     )
     fig.text(0.08, 0.37, wrap(narrative, 112), fontsize=10.2, family="DejaVu Serif")
     pdf.savefig(fig, bbox_inches="tight")
@@ -848,7 +924,7 @@ def add_primary_pages(pdf: PdfPages, result: LinearModelResult, sex_test: dict) 
             f"Welch's test on the raw patient-level outcome gave t({fmt(sex_test['df'], 2)}) = {fmt(sex_test['t'])}, "
             f"p = {p_str(sex_test['p'])}, with males higher than females by {fmt(sex_test['mean_diff'])} "
             f"(95% CI {ci_str(sex_test['ci_low'], sex_test['ci_high'])}). "
-            "The adjusted primary model retained sex as the largest unique contributor, but not at p < .05.",
+            "The adjusted primary model then evaluated sex first, followed by stimulation trajectory and the remaining covariates in that order.",
             110,
         ),
         fontsize=10.5,
@@ -932,7 +1008,7 @@ def add_sensitivity_pages(pdf: PdfPages, results: list[LinearModelResult]) -> No
             ax_coef,
             pretty_coefficients(result),
             f"Table\n{result.title} coefficients",
-            note="Female and left hemisphere are the reference groups when present. Constant predictors in a subset were omitted automatically.",
+            note="Female, MTG trajectory, and left hemisphere are the reference groups when present. Constant predictors in a subset were omitted automatically.",
             font_size=8.9,
             bbox=[0, 0.10, 1, 0.82],
             col_widths=[0.36, 0.11, 0.11, 0.11, 0.11, 0.20],
@@ -941,12 +1017,12 @@ def add_sensitivity_pages(pdf: PdfPages, results: list[LinearModelResult]) -> No
         ax_contrib = fig.add_axes([0.08, 0.18, 0.84, 0.20])
         draw_apa_table(
             ax_contrib,
-            pretty_contributions(result),
-            f"Table\n{result.title} unique variance contribution",
-            note="Delta R2 values are specific to the analysis subset for that model.",
-            font_size=8.8,
+            pretty_sequential_steps(result),
+            f"Table\n{result.title} sequential model-building steps",
+            note="Predictors are entered in the requested order for that model and delta R2 values are subset-specific.",
+            font_size=8.0,
             bbox=[0, 0.12, 1, 0.78],
-            col_widths=[0.40, 0.16, 0.18, 0.12],
+            col_widths=[0.08, 0.36, 0.14, 0.14, 0.14, 0.10],
         )
 
         omitted_line = "None"
@@ -983,19 +1059,27 @@ def add_conclusion_page(pdf: PdfPages, primary_result: LinearModelResult, result
     )
 
     primary_sex = primary_result.coefficients.loc[primary_result.coefficients["term"] == "sex"].iloc[0]
+    primary_traj = primary_result.coefficients.loc[primary_result.coefficients["term"] == "stim_trajectory"].iloc[0]
     ied_result = next(item for item in results if item.slug == "ied_sensitivity")
     mem_result = next(item for item in results if item.slug == "memoryz_sensitivity")
+    primary_steps = primary_result.sequential_steps.set_index("predictor", drop=False)
+    ied_steps = ied_result.sequential_steps.set_index("predictor", drop=False)
+    mem_steps = mem_result.sequential_steps.set_index("predictor", drop=False)
 
     paragraphs = [
         "This file supports a between-subject regression question, not a within-subject MLM question. "
         "The outcome is already one number per patient, so there is no residual subject-level nesting to model.",
-        f"In the full-sample adjusted model, sex was the strongest requested predictor of memory modulation: "
+        f"In the full-sample adjusted model, sex was entered first and stimulation trajectory second. "
         f"B = {fmt(primary_sex['B'])}, 95% CI {ci_str(primary_sex['CI_low'], primary_sex['CI_high'])}, "
-        f"p = {p_str(primary_sex['p'])}. That effect was suggestive but not conventionally significant after adjustment.",
-        f"IED_freq did not contribute meaningfully in the 44-patient sensitivity model (model p = {p_str(ied_result.f_p)}), "
-        "and adding it did not improve explanatory power.",
+        f"p = {p_str(primary_sex['p'])} for sex, and B = {fmt(primary_traj['B'])}, "
+        f"95% CI {ci_str(primary_traj['CI_low'], primary_traj['CI_high'])}, p = {p_str(primary_traj['p'])} "
+        "for STG versus MTG trajectory after adjustment.",
+        f"Sequentially, sex produced model R2 = {fmt(primary_steps.loc['sex', 'R2'])} and adding trajectory increased R2 by "
+        f"{fmt(primary_steps.loc['stim_trajectory', 'Delta_R2'])}. Later additions were smaller and did not reverse the earlier pattern.",
+        f"IED_freq did not contribute meaningfully in the sensitivity model when it was added after the primary covariates "
+        f"(step p = {p_str(ied_steps.loc['IED_freq', 'p_change'])}).",
         f"Memory_Z was only available for 31 patients from a restricted subset of studies, and its coefficient was not significant "
-        f"in that subset (model p = {p_str(mem_result.f_p)}). Because all cases in that subset were at 0.5 DB, stim_DB could not be estimated there.",
+        f"in that subset (step p = {p_str(mem_steps.loc['Memory_Z', 'p_change'])}). Because all cases in that subset were at 0.5 DB, stim_DB could not be estimated there.",
         "If the substantive question is still what explains the high ICC from the original trial-level null model, the next step is to return to the trial-level dataset "
         "and add these patient-level covariates there as fixed effects in a mixed model. The present report instead shows which patient-level covariates relate to the collapsed patient summary outcome.",
     ]
@@ -1018,8 +1102,8 @@ def add_conclusion_page(pdf: PdfPages, primary_result: LinearModelResult, result
         ax,
         0.08,
         0.21,
-        "Among the requested subject-level variables, sex looks like the most plausible contributor to between-subject differences in avg_stim_dprime_diff, "
-        "but the adjusted evidence is modest. Age and hemisphere show smaller nonsignificant trends. Neither stimulation amplitude nor IED_freq explained much variance in these patient-level models.",
+        "Among the requested subject-level variables, sex and stimulation trajectory now enter the patient-level model first and should be interpreted together. "
+        "The later covariates mainly test whether that earlier between-subject pattern survives adjustment rather than replacing it. Age, hemisphere, amplitude, IED_freq, and Memory_Z added comparatively modest information in these patient-level models.",
         fontsize=11,
     )
     pdf.savefig(fig, bbox_inches="tight")
