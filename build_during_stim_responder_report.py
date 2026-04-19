@@ -217,7 +217,7 @@ def plot_boost_by_patient(summary: pd.DataFrame, out_path: str):
                   fontsize=11)
     ax.set_title('Patient-based distribution of IEDs in the During Stimulation '
                  'time window compared to all other time windows in stimulation '
-                 'trials\n(patients ordered left to right by avg_stim_dprime_diff)',
+                 'trials',
                  fontsize=12, fontweight='bold')
 
     # Legend
