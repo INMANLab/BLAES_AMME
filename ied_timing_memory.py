@@ -286,20 +286,17 @@ def plot_stacked_memory(trial_level, timing_cols, timing_labels, phase_label, fi
                color=FORGOTTEN_COLOR, edgecolor='black', linewidth=0.6,
                label='Forgotten' if offset < 0 else '')
 
-        for i in range(len(timing_cols)):
-            total = rem_counts[i] + forg_counts[i]
-            pct = rem_counts[i] / total * 100 if total > 0 else 0
-            ax.text(x[i] + offset, total + 3, f'{pct:.0f}%',
-                    ha='center', va='bottom', fontsize=9, fontweight='bold')
-
     for i in range(len(timing_cols)):
-        ax.text(x[i] - bar_width / 2, -18, 'Present', ha='center',
-                fontsize=8, fontstyle='italic')
-        ax.text(x[i] + bar_width / 2, -18, 'Absent', ha='center',
-                fontsize=8, fontstyle='italic')
+        ax.text(x[i] - bar_width / 2, -0.03, 'Present', ha='center', va='top',
+                fontsize=8, fontstyle='italic',
+                transform=ax.get_xaxis_transform())
+        ax.text(x[i] + bar_width / 2, -0.03, 'Absent', ha='center', va='top',
+                fontsize=8, fontstyle='italic',
+                transform=ax.get_xaxis_transform())
 
     ax.set_xticks(x)
     ax.set_xticklabels([timing_labels[c] for c in timing_cols], fontsize=13)
+    ax.tick_params(axis='x', pad=18)
     ax.set_ylabel('Number of Trials', fontsize=15)
     ax.set_title(f'{phase_label}: Remembered vs Forgotten Trial Counts',
                  fontsize=17, fontweight='bold')
