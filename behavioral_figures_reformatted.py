@@ -36,6 +36,7 @@ SWARM_ASPECT = 0.78
 SWARM_TITLE_Y = 0.985
 SWARM_STATS_Y = 0.855
 SWARM_TOP = 0.74
+SEX_PALETTE = {'male': '#A9D6FF', 'female': '#F7B6D2'}
 
 
 def load_behavior_csv() -> pd.DataFrame:
@@ -247,12 +248,11 @@ def plot_sex_swarm(df: pd.DataFrame) -> None:
     female = plot_df.loc[plot_df['sex'] == 'female', 'avg_stim_dprime_diff']
     t_stat, p_val = ttest_ind(male, female, equal_var=False)
     legend_labels = {'male': f'male (N = {len(male)})', 'female': f'female (N = {len(female)})'}
-    palette = {'male': '#191273', 'female': '#AA2CAC'}
     make_swarm(
         plot_df,
         hue='sex',
         hue_order=['male', 'female'],
-        palette=palette,
+        palette=SEX_PALETTE,
         title=f'AMME & BLAES dprime difference by sex at one-day delay, N={len(plot_df)}',
         out_name='AMMEBLAES_sex_swarmplot_stats.png',
         legend_title='Sex',

@@ -43,6 +43,7 @@ RESPONDER_PALETTE = {
 SWARM_TITLE_Y = 0.985
 SWARM_STATS_Y = 0.855
 SWARM_TOP = 0.74
+SEX_PALETTE = {'male': '#A9D6FF', 'female': '#F7B6D2'}
 
 MANUAL_COUNT_LOGS = {
     'amyg001': Path('/Users/martinahollearn/Library/CloudStorage/Box-Box/InmanLab/AMME_Data_Emory/AMME_Data/amyg001/amyg001_day2.log'),
@@ -400,8 +401,6 @@ def plot_sex_swarm(df: pd.DataFrame) -> None:
         'male': f'male (N = {len(male)})',
         'female': f'female (N = {len(female)})',
     }
-    palette = {'male': '#191273', 'female': '#AA2CAC'}
-
     grid = sns.catplot(
         x='delay_group',
         y='avg_stim_dprime_diff',
@@ -410,7 +409,7 @@ def plot_sex_swarm(df: pd.DataFrame) -> None:
         data=plot_df,
         kind='swarm',
         s=180,
-        palette=palette,
+        palette=SEX_PALETTE,
         height=10,
         aspect=0.55,
     )
