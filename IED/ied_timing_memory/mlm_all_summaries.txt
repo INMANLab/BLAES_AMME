@@ -1,0 +1,265 @@
+========== MODEL 1a: Encoding IED Windows (random intercept) ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ ied_before_image + ied_during_image + ied_after_image +  
+    ied_during_stim + (1 | patient_id)
+   Data: d
+Control: glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1e+05))
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    904.8     933.0    -446.4     892.8       796 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-3.3741 -0.8801  0.4150  0.6707  1.5334 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 0.7975   0.893   
+Number of obs: 802, groups:  patient_id, 33
+
+Fixed effects:
+                 Estimate Std. Error z value Pr(>|z|)    
+(Intercept)       1.45989    0.28045   5.205 1.94e-07 ***
+ied_before_image  0.02881    0.19062   0.151  0.87986    
+ied_during_image -0.25934    0.19279  -1.345  0.17856    
+ied_after_image  -0.45807    0.18590  -2.464  0.01374 *  
+ied_during_stim  -0.56247    0.21468  -2.620  0.00879 ** 
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) id_bf_ id_drng_m id_ft_
+ied_befr_mg -0.438                        
+ied_drng_mg -0.563  0.210                 
+ied_aftr_mg -0.415  0.296  0.182          
+id_drng_stm -0.227  0.053  0.141     0.067
+
+Odds Ratios:
+     (Intercept) ied_before_image ied_during_image  ied_after_image 
+           4.305            1.029            0.772            0.633 
+ ied_during_stim 
+           0.570 
+
+95% CIs:
+                 2.5 % 97.5 %
+.sig01              NA     NA
+(Intercept)      2.485  7.460
+ied_before_image 0.708  1.495
+ied_during_image 0.529  1.126
+ied_after_image  0.439  0.911
+ied_during_stim  0.374  0.868
+
+
+========== MODEL 1b: IED Windows + Stim + Interactions ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ (ied_before_image + ied_during_image + ied_after_image +  
+    ied_during_stim) * stim + (1 | patient_id)
+   Data: d
+Control: glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1e+05))
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    908.6     960.1    -443.3     886.6       791 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-3.5517 -0.9026  0.4037  0.6652  1.4844 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 0.7771   0.8815  
+Number of obs: 802, groups:  patient_id, 33
+
+Fixed effects:
+                       Estimate Std. Error z value Pr(>|z|)    
+(Intercept)             1.64061    0.38888   4.219 2.46e-05 ***
+ied_before_image       -0.33684    0.28227  -1.193   0.2327    
+ied_during_image       -0.30322    0.29577  -1.025   0.3053    
+ied_after_image        -0.52615    0.27303  -1.927   0.0540 .  
+ied_during_stim       -15.43645   87.80735  -0.176   0.8605    
+stim                   -0.30703    0.43877  -0.700   0.4841    
+ied_before_image:stim   0.63665    0.37005   1.720   0.0854 .  
+ied_during_image:stim   0.08186    0.37830   0.216   0.8287    
+ied_after_image:stim    0.16437    0.37616   0.437   0.6621    
+ied_during_stim:stim   14.87211   87.80759   0.169   0.8655    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) id_bf_ id_drng_m id_ft_ id_drng_s stim   id_b_: id_drng_m:
+ied_befr_mg -0.506                                                           
+ied_drng_mg -0.655  0.200                                                    
+ied_aftr_mg -0.536  0.292  0.212                                             
+id_drng_stm  0.001 -0.001  0.000     0.000                                   
+stim        -0.693  0.432  0.564     0.463 -0.001                            
+id_bfr_mg:s  0.380 -0.735 -0.148    -0.204  0.001    -0.565                  
+id_drng_mg:  0.493 -0.150 -0.753    -0.146  0.000    -0.720  0.211           
+id_ftr_mg:s  0.375 -0.207 -0.143    -0.711  0.000    -0.525  0.283  0.168    
+id_drng_st: -0.001  0.001  0.000     0.000 -1.000     0.000 -0.001  0.000    
+            id_f_:
+ied_befr_mg       
+ied_drng_mg       
+ied_aftr_mg       
+id_drng_stm       
+stim              
+id_bfr_mg:s       
+id_drng_mg:       
+id_ftr_mg:s       
+id_drng_st:  0.000
+optimizer (bobyqa) convergence code: 0 (OK)
+Model is nearly unidentifiable: large eigenvalue ratio
+ - Rescale variables?
+
+
+Model comparison 1a vs 1b:
+Data: d
+Models:
+m1a: memory ~ ied_before_image + ied_during_image + ied_after_image + ied_during_stim + (1 | patient_id)
+m1b: memory ~ (ied_before_image + ied_during_image + ied_after_image + ied_during_stim) * stim + (1 | patient_id)
+    npar    AIC    BIC  logLik -2*log(L) Chisq Df Pr(>Chisq)
+m1a    6 904.84 932.97 -446.42    892.84                    
+m1b   11 908.56 960.12 -443.28    886.56 6.282  5     0.2797
+
+
+========== MODEL 1c: Random slope for After Image ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ ied_before_image + ied_during_image + ied_after_image +  
+    ied_during_stim + (1 + ied_after_image | patient_id)
+   Data: d
+Control: glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e+05))
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    908.8     946.3    -446.4     892.8       794 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-3.3743 -0.8801  0.4150  0.6707  1.5334 
+
+Random effects:
+ Groups     Name            Variance  Std.Dev.  Corr
+ patient_id (Intercept)     7.974e-01 0.8929481     
+            ied_after_image 1.676e-08 0.0001295 1.00
+Number of obs: 802, groups:  patient_id, 33
+
+Fixed effects:
+                 Estimate Std. Error z value Pr(>|z|)    
+(Intercept)       1.45986    0.28461   5.129 2.91e-07 ***
+ied_before_image  0.02882    0.19125   0.151  0.88021    
+ied_during_image -0.25932    0.19442  -1.334  0.18226    
+ied_after_image  -0.45802    0.20455  -2.239  0.02515 *  
+ied_during_stim  -0.56248    0.21477  -2.619  0.00882 ** 
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) id_bf_ id_drng_m id_ft_
+ied_befr_mg -0.444                        
+ied_drng_mg -0.572  0.218                 
+ied_aftr_mg -0.443  0.302  0.218          
+id_drng_stm -0.218  0.050  0.136     0.049
+optimizer (bobyqa) convergence code: 0 (OK)
+boundary (singular) fit: see help('isSingular')
+
+
+Model comparison 1a vs 1c:
+Data: d
+Models:
+m1a: memory ~ ied_before_image + ied_during_image + ied_after_image + ied_during_stim + (1 | patient_id)
+m1c: memory ~ ied_before_image + ied_during_image + ied_after_image + ied_during_stim + (1 + ied_after_image | patient_id)
+    npar    AIC    BIC  logLik -2*log(L) Chisq Df Pr(>Chisq)
+m1a    6 904.84 932.97 -446.42    892.84                    
+m1c    8 908.84 946.34 -446.42    892.84     0  2          1
+
+
+========== MODEL 2a: Stim * Retrieval IED Freq (centered) ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ stim * ret_ied_freq_c + (1 | patient_id)
+   Data: d2
+Control: glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1e+05))
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    913.6     937.0    -451.8     903.6       797 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-3.4775 -1.0091  0.4227  0.6784  1.0463 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 0.7229   0.8502  
+Number of obs: 802, groups:  patient_id, 33
+
+Fixed effects:
+                    Estimate Std. Error z value Pr(>|z|)    
+(Intercept)          1.12333    0.22490   4.995 5.89e-07 ***
+stim                 0.03015    0.17137   0.176    0.860    
+ret_ied_freq_c       6.86965    4.27899   1.605    0.108    
+stim:ret_ied_freq_c -0.71556    3.44406  -0.208    0.835    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) stim   rt_d__
+stim        -0.432              
+ret_d_frq_c  0.251 -0.020       
+stm:rt_d_f_ -0.019  0.091 -0.467
+
+Odds Ratios:
+        (Intercept)                stim      ret_ied_freq_c stim:ret_ied_freq_c 
+              3.075               1.031             962.608               0.489 
+
+95% CIs:
+                    2.5 %      97.5 %
+.sig01                 NA          NA
+(Intercept)         1.979       4.778
+stim                0.737       1.442
+ret_ied_freq_c      0.219 4224117.214
+stim:ret_ied_freq_c 0.001     417.658
+
+
+========== MODEL 2b: Stim * Retrieval IED Freq (standardized) ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ stim * ret_ied_freq_z + (1 | patient_id)
+   Data: d2
+Control: glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1e+05))
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    913.6     937.0    -451.8     903.6       797 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-3.4775 -1.0091  0.4227  0.6784  1.0463 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 0.7229   0.8502  
+Number of obs: 802, groups:  patient_id, 33
+
+Fixed effects:
+                    Estimate Std. Error z value Pr(>|z|)    
+(Intercept)          1.12333    0.22491   4.995 5.89e-07 ***
+stim                 0.03015    0.17137   0.176    0.860    
+ret_ied_freq_z       0.39845    0.24829   1.605    0.109    
+stim:ret_ied_freq_z -0.04151    0.19977  -0.208    0.835    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) stim   rt_d__
+stim        -0.432              
+ret_d_frq_z  0.251 -0.020       
+stm:rt_d_f_ -0.019  0.091 -0.467

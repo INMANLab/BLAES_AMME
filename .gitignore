@@ -6,3 +6,9 @@ outputs/
 *.pyc
 to_combine/
 *.png
+.venv/
+*.pptx
+*.gif
+__pycache__/
+.numba_cache/
+.mplconfig/

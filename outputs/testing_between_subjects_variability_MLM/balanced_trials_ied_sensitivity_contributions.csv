@@ -1,6 +1,0 @@
-Predictor,Delta R2,F change,p
-Sex (male vs female),0.010,0.305,.585
-Age (years),0.050,1.573,.220
-Stim hemisphere (R vs L),0.007,0.227,.637
-Stim amplitude (DB),0.002,0.052,.821
-IED frequency (Likert),0.003,0.086,.772

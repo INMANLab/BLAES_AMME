@@ -1,0 +1,197 @@
+========== MODEL A: Bilateral IED x Stim (Encoding) ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ bilateral_ied * stim + (1 | patient_id)
+   Data: enc_bi
+Control: ctrl
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    441.0     460.0    -215.5     431.0       323 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-2.1216 -1.0484  0.6298  0.8093  1.3156 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 0.2348   0.4845  
+Number of obs: 328, groups:  patient_id, 10
+
+Fixed effects:
+                   Estimate Std. Error z value Pr(>|z|)
+(Intercept)          0.4240     0.2637   1.608    0.108
+bilateral_ied       -0.4757     0.3552  -1.339    0.181
+stim                 0.2902     0.2772   1.047    0.295
+bilateral_ied:stim  -0.4383     0.5319  -0.824    0.410
+
+Correlation of Fixed Effects:
+            (Intr) bltrl_ stim  
+bilateral_d -0.439              
+stim        -0.575  0.411       
+bltrl_d:stm  0.294 -0.657 -0.517
+
+LRT for interaction:
+Data: enc_bi
+Models:
+mA0: memory ~ bilateral_ied + stim + (1 | patient_id)
+mA: memory ~ bilateral_ied * stim + (1 | patient_id)
+    npar    AIC    BIC  logLik -2*log(L)  Chisq Df Pr(>Chisq)
+mA0    4 439.67 454.84 -215.83    431.67                     
+mA     5 440.99 459.95 -215.49    430.99 0.6801  1     0.4095
+
+
+========== MODEL B: Laterality x Stim (Encoding) ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ hemi_cat * stim + (1 | patient_id)
+   Data: enc_all
+Control: ctrl
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    910.1     942.9    -448.0     896.1       795 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-3.1324 -0.8727  0.4266  0.6640  1.3157 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 0.6136   0.7833  
+Number of obs: 802, groups:  patient_id, 33
+
+Fixed effects:
+                       Estimate Std. Error z value Pr(>|z|)    
+(Intercept)             0.92625    0.26179   3.538 0.000403 ***
+hemi_catR               0.40560    0.35158   1.154 0.248653    
+hemi_catBilateral      -0.53045    0.37574  -1.412 0.158024    
+stim                    0.02388    0.24399   0.098 0.922018    
+hemi_catR:stim         -0.05586    0.37603  -0.149 0.881909    
+hemi_catBilateral:stim -0.17903    0.51980  -0.344 0.730531    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) hm_ctR hm_ctB stim   hm_cR:
+hemi_catR   -0.586                            
+hem_ctBltrl -0.417  0.408                     
+stim        -0.529  0.395  0.366              
+hem_ctR:stm  0.338 -0.623 -0.245 -0.648       
+hm_ctBltrl:  0.219 -0.143 -0.587 -0.468  0.300
+
+LRT for interactions:
+Data: enc_all
+Models:
+mB0: memory ~ hemi_cat + stim + (1 | patient_id)
+mB: memory ~ hemi_cat * stim + (1 | patient_id)
+    npar    AIC    BIC  logLik -2*log(L)  Chisq Df Pr(>Chisq)
+mB0    5 906.18 929.62 -448.09    896.18                     
+mB     7 910.06 942.87 -448.03    896.06 0.1206  2     0.9415
+
+
+========== MODEL B2: L vs R (Encoding) ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ hemi_R * stim + (1 | patient_id)
+   Data: enc_lr
+Control: ctrl
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    788.9     811.8    -389.5     778.9       710 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-3.0299 -1.0111  0.4375  0.5832  1.0213 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 0.5111   0.7149  
+Number of obs: 715, groups:  patient_id, 33
+
+Fixed effects:
+            Estimate Std. Error z value Pr(>|z|)    
+(Intercept)  0.91160    0.25560   3.567 0.000362 ***
+hemi_R       0.50898    0.35660   1.427 0.153492    
+stim         0.01429    0.24336   0.059 0.953160    
+hemi_R:stim -0.06632    0.37533  -0.177 0.859742    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) hemi_R stim  
+hemi_R      -0.601              
+stim        -0.543  0.392       
+hemi_R:stim  0.348 -0.622 -0.647
+
+
+========== MODEL C: Bilateral IED (Retrieval) ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ bilateral_ied + (1 | patient_id)
+   Data: ret_bi
+Control: ctrl
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+     75.6      81.7     -34.8      69.6        53 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-1.9994 -1.2621  0.5475  0.7466  0.8487 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 0.2642   0.514   
+Number of obs: 56, groups:  patient_id, 6
+
+Fixed effects:
+              Estimate Std. Error z value Pr(>|z|)  
+(Intercept)     0.6782     0.3973   1.707   0.0878 .
+bilateral_ied   0.5463     0.8902   0.614   0.5394  
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr)
+bilateral_d -0.310
+
+
+========== MODEL D: Laterality (Retrieval) ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ hemi_cat + (1 | patient_id)
+   Data: ret_all
+Control: ctrl
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    162.6     174.5     -77.3     154.6       141 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-2.6646  0.3753  0.3939  0.5633  0.9343 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 0.7359   0.8579  
+Number of obs: 145, groups:  patient_id, 18
+
+Fixed effects:
+                  Estimate Std. Error z value Pr(>|z|)  
+(Intercept)        1.01745    0.40985   2.483    0.013 *
+hemi_catR         -0.02949    0.64080  -0.046    0.963  
+hemi_catBilateral  0.34803    0.93571   0.372    0.710  
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) hm_ctR
+hemi_catR   -0.600       
+hem_ctBltrl -0.315  0.300

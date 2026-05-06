@@ -45,6 +45,7 @@ else:
 import matplotlib.pyplot as plt
 import matplotlib.colors
 from matplotlib.lines import Line2D
+from matplotlib.ticker import FormatStrFormatter
 
 warnings.filterwarnings('ignore')
 sns.set_theme(style='white')
@@ -330,6 +331,159 @@ def compute_condition_band_df(stim_dict, nostim_dict, freqs, bands):
                     'nostim': float(np.nanmean(nostim_vec[mask])),
                 })
     return pd.DataFrame(rows)
+
+
+PAC_FILTERED_SELECTED_ROIS = {'ALLHPC', 'BLA', 'EC', 'PRC'}
+
+PAC_BLA_PANEL_PAIRS = [
+    'BLA_ALLHPC',
+    'BLA_EC',
+    'BLA_PRC',
+]
+PAC_NONBLA_PANEL_PAIRS = [
+    'ALLHPC_EC',
+    'ALLHPC_PRC',
+]
+
+
+def _pac_bh_fdr(pvals):
+    pvals = np.asarray(pvals, dtype=float)
+    n = len(pvals)
+    if n == 0:
+        return pvals
+    order = np.argsort(pvals)
+    ranks = np.arange(1, n + 1, dtype=float)
+    sorted_p = pvals[order]
+    sorted_adj = np.minimum.accumulate((sorted_p * n / ranks)[::-1])[::-1]
+    sorted_adj = np.minimum(sorted_adj, 1.0)
+    adj = np.empty(n, dtype=float)
+    adj[order] = sorted_adj
+    return adj
+
+
+def _pac_sig_marker(p):
+    if np.isnan(p):
+        return ''
+    if p < 0.001:
+        return '***'
+    if p < 0.01:
+        return '**'
+    if p < 0.05:
+        return '*'
+    return ''
+
+
+def _pac_filter_pair_regions(regions, selected):
+    keep = []
+    for r in regions:
+        parts = str(r).split('_')
+        if len(parts) == 2 and parts[0] in selected and parts[1] in selected:
+            keep.append(r)
+    return keep
+
+
+def plot_pac_filtered_significance_bargraph(
+    diff_df,
+    out_dir,
+    title,
+    filename,
+    band_name='Slow gamma',
+    footer_text=None,
+    selected_regions=None,
+    allowed_pairs=None,
+):
+    if diff_df is None or diff_df.empty:
+        return
+    plot_df = diff_df[diff_df['band'] == band_name].copy()
+    if plot_df.empty:
+        return
+    if allowed_pairs is not None:
+        keep = [r for r in plot_df['Region'].unique() if r in set(allowed_pairs)]
+    else:
+        selected = set(selected_regions) if selected_regions is not None else PAC_FILTERED_SELECTED_ROIS
+        keep = _pac_filter_pair_regions(plot_df['Region'].unique(), selected)
+    plot_df = plot_df[plot_df['Region'].isin(keep)]
+    if plot_df.empty:
+        return
+    if allowed_pairs is not None:
+        order_lookup = {p: i for i, p in enumerate(allowed_pairs)}
+        roi_order = sorted(plot_df['Region'].unique(), key=lambda r: order_lookup.get(r, 999))
+    else:
+        roi_order = sorted(plot_df['Region'].unique())
+    if not roi_order:
+        return
+
+    from scipy import stats as _stats
+    pvals = []
+    for roi in roi_order:
+        vals = plot_df.loc[plot_df['Region'] == roi, 'mean_pac_diff'].dropna().to_numpy()
+        if len(vals) >= 2 and np.std(vals, ddof=1) > 0:
+            _, p = _stats.ttest_1samp(vals, 0.0)
+        else:
+            p = np.nan
+        pvals.append(p)
+    pvals = np.asarray(pvals, dtype=float)
+    valid = ~np.isnan(pvals)
+    adj = np.full(len(pvals), np.nan)
+    if valid.sum() > 0:
+        adj[valid] = _pac_bh_fdr(pvals[valid])
+
+    UNIFORM_BAR_GRAY = '#A0A0A0'
+    bar_colors = {roi: UNIFORM_BAR_GRAY for roi in roi_order}
+    fig_width = max(13.0, min(20.0, 7.0 + 1.0 * len(roi_order)))
+    fig, ax = plt.subplots(figsize=(fig_width, 9.5))
+    summary = plot_df.groupby('Region')['mean_pac_diff'].agg(['mean', 'sem']).reindex(roi_order)
+    x = np.arange(len(roi_order))
+    sig_flags = [(not np.isnan(adj[i]) and adj[i] < 0.05) for i in range(len(roi_order))]
+    rng = np.random.default_rng(7)
+    bars = ax.bar(
+        x,
+        summary['mean'].to_numpy(),
+        yerr=summary['sem'].fillna(0).to_numpy(),
+        color=[bar_colors[roi] for roi in roi_order],
+        edgecolor='#4D4D4D', linewidth=1.2, width=0.72,
+        capsize=3, ecolor='#4D4D4D', zorder=1,
+    )
+    for i, bar in enumerate(bars):
+        if sig_flags[i]:
+            bar.set_edgecolor('red')
+            bar.set_linewidth(3.0)
+    for idx, roi in enumerate(roi_order):
+        roi_vals = plot_df.loc[plot_df['Region'] == roi, 'mean_pac_diff'].dropna().to_numpy()
+        if len(roi_vals) == 0:
+            continue
+        jitter = rng.uniform(-0.16, 0.16, len(roi_vals))
+        ax.scatter(
+            np.full(len(roi_vals), idx, dtype=float) + jitter,
+            roi_vals,
+            c='#404040', s=42, alpha=0.75, edgecolors='none', zorder=3,
+        )
+    ax.axhline(0, color='#4D4D4D', linewidth=1.2, zorder=0)
+
+    if 'Remembered Trials' in title:
+        _trial = 'Remembered Trials'
+    elif 'Forgotten Trials' in title:
+        _trial = 'Forgotten Trials'
+    else:
+        _trial = 'All Trials'
+    ax.set_title(f'{_trial} - {band_name}', fontsize=30, fontweight='bold')
+    ax.set_xlabel('')
+    ax.set_xticks(x)
+    xtick_labels = [f'{roi} *' if sig_flags[i] else roi for i, roi in enumerate(roi_order)]
+    ax.set_xticklabels(xtick_labels, rotation=35, ha='right', fontsize=18, fontweight='bold')
+    ax.tick_params(axis='y', labelsize=22, width=2, length=6)
+    ax.tick_params(axis='x', width=2, length=6)
+    ax.set_ylabel('MI Difference (Stim - No Stim)', fontsize=27, fontweight='bold')
+    full_caption = (footer_text or '') + (
+        ' Significance: paired t-test (stim vs no-stim) per region pair on theta-phase / slow-gamma-amplitude MI, '
+        'Benjamini-Hochberg FDR-corrected across pairs. Pairs with q<.05 are marked with a red bar border and a * next to the pair label.'
+    )
+    save_figure_output(
+        fig,
+        out_dir / filename,
+        footer_text=full_caption,
+        rect=[0, 0.06, 1, 1],
+    )
 
 
 def plot_grouped_condition_bars(
@@ -847,6 +1001,22 @@ def plot_bc_bar_graph(
             footer_text=footer_text,
             rect=[0, 0, 1, 0.92],
         )
+    plot_pac_filtered_significance_bargraph(
+        diff_df,
+        out_dir,
+        title=f'{label} Retrieval MI Difference (Stim - No Stim) - BLA Pairs',
+        filename='Bargraph_PAC_MIDiff_byROI_retrieval_filtered_sig_BLApairs.png',
+        footer_text=footer_text,
+        allowed_pairs=PAC_BLA_PANEL_PAIRS,
+    )
+    plot_pac_filtered_significance_bargraph(
+        diff_df,
+        out_dir,
+        title=f'{label} Retrieval MI Difference (Stim - No Stim) - ALLHPC/EC/PRC Pairs',
+        filename='Bargraph_PAC_MIDiff_byROI_retrieval_filtered_sig_nonBLApairs.png',
+        footer_text=footer_text,
+        allowed_pairs=PAC_NONBLA_PANEL_PAIRS,
+    )
     plot_grouped_condition_bars(
         compute_condition_band_df(data['diff_stim'], data['diff_nostim'], freqs, PAC_BANDS),
         out_dir,
@@ -1424,6 +1594,22 @@ def plot_bc_bar_by_memory(
                 footer_text=footer_text,
                 rect=[0, 0, 1, 0.92],
             )
+        plot_pac_filtered_significance_bargraph(
+            subset,
+            out_dir,
+            title=f'{label} Retrieval MI Difference (Stim - No Stim), {memory_label} Trials - BLA Pairs',
+            filename=f'Bargraph_PAC_MIDiff_byROI_retrieval_{memory_cond}_filtered_sig_BLApairs.png',
+            footer_text=footer_text,
+            allowed_pairs=PAC_BLA_PANEL_PAIRS,
+        )
+        plot_pac_filtered_significance_bargraph(
+            subset,
+            out_dir,
+            title=f'{label} Retrieval MI Difference (Stim - No Stim), {memory_label} Trials - ALLHPC/EC/PRC Pairs',
+            filename=f'Bargraph_PAC_MIDiff_byROI_retrieval_{memory_cond}_filtered_sig_nonBLApairs.png',
+            footer_text=footer_text,
+            allowed_pairs=PAC_NONBLA_PANEL_PAIRS,
+        )
         stim_dict, nostim_dict = mem_source_lookup[memory_cond]
         plot_grouped_condition_bars(
             compute_condition_band_df(stim_dict, nostim_dict, freqs, PAC_BANDS),
@@ -1457,6 +1643,7 @@ def plot_bc_remembered_forgotten(
     for roi in sorted(all_rois):
         has_data = False
         fig, axes = plt.subplots(1, 2, figsize=(17, 6.5), sharey=True)
+        rem_means = {'No Stim': None, 'Stim': None}
         for ax, memory_label in zip(axes, ['Remembered', 'Forgotten']):
             for condition_name, condition_dict, color in [
                 ('No Stim', memory_maps[memory_label]['nostim'], '#1f77b4'),
@@ -1471,20 +1658,44 @@ def plot_bc_remembered_forgotten(
                 sem = matrix.std(axis=0) / np.sqrt(matrix.shape[0])
                 ax.plot(freqs, mean, color=color, linewidth=2, label=f'{condition_name} (n={matrix.shape[0]})')
                 ax.fill_between(freqs, mean - sem, mean + sem, color=color, alpha=0.2)
+                if memory_label == 'Remembered':
+                    rem_means[condition_name] = mean
             ax.set_title(f'{memory_label} Trials', fontsize=15, fontweight='bold')
             ax.set_xlabel('Amplitude Frequency (Hz)', fontsize=14, fontweight='bold')
             ax.tick_params(axis='both', labelsize=11)
+            ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
             style_axis(ax)
         axes[0].set_ylabel('PAC', fontsize=14, fontweight='bold')
         if has_data:
-            handles, labels = axes[0].get_legend_handles_labels()
-            fig.legend(handles, labels, bbox_to_anchor=(0.92, 0.5), loc='center left', fontsize=10, frameon=False)
+            f_arr = np.asarray(freqs)
+            loc = 'lower right'
+            if rem_means['No Stim'] is not None and rem_means['Stim'] is not None:
+                ymin, ymax = axes[0].get_ylim()
+                xmin, xmax = axes[0].get_xlim()
+                x_split = xmin + 0.5 * (xmax - xmin)
+                y_split = ymin + 0.5 * (ymax - ymin)
+                left_mask = (f_arr >= xmin) & (f_arr <= x_split)
+                right_mask = (f_arr >= x_split) & (f_arr <= xmax)
+                def _density(mask, y_low, y_high):
+                    if not np.any(mask):
+                        return 0
+                    count = 0
+                    for series in (rem_means['Stim'], rem_means['No Stim']):
+                        seg = series[mask]
+                        count += int(np.sum((seg >= y_low) & (seg <= y_high)))
+                    return count
+                corners = {
+                    'lower left':  _density(left_mask,  ymin, y_split),
+                    'lower right': _density(right_mask, ymin, y_split),
+                }
+                loc = min(corners, key=corners.get)
+            axes[0].legend(loc=loc, fontsize=10, framealpha=0.85)
             fig.suptitle(f'{label} Retrieval {roi} Baseline-corrected PAC', fontsize=18, fontweight='bold')
             save_figure_output(
                 fig,
                 out_dir / filename_template.format(roi=roi),
                 footer_text=footer_text,
-                rect=[0, 0, 0.9, 0.93],
+                rect=[0, 0, 1, 0.93],
             )
         else:
             finalize_figure(fig)

@@ -348,6 +348,159 @@ def compute_condition_band_df(stim_dict, nostim_dict, freqs, bands):
     return pd.DataFrame(rows)
 
 
+PAC_FILTERED_SELECTED_ROIS = {'ALLHPC', 'BLA', 'EC', 'PRC'}
+
+PAC_BLA_PANEL_PAIRS = [
+    'BLA_ALLHPC',
+    'BLA_EC',
+    'BLA_PRC',
+]
+PAC_NONBLA_PANEL_PAIRS = [
+    'ALLHPC_EC',
+    'ALLHPC_PRC',
+]
+
+
+def _pac_bh_fdr(pvals):
+    pvals = np.asarray(pvals, dtype=float)
+    n = len(pvals)
+    if n == 0:
+        return pvals
+    order = np.argsort(pvals)
+    ranks = np.arange(1, n + 1, dtype=float)
+    sorted_p = pvals[order]
+    sorted_adj = np.minimum.accumulate((sorted_p * n / ranks)[::-1])[::-1]
+    sorted_adj = np.minimum(sorted_adj, 1.0)
+    adj = np.empty(n, dtype=float)
+    adj[order] = sorted_adj
+    return adj
+
+
+def _pac_sig_marker(p):
+    if np.isnan(p):
+        return ''
+    if p < 0.001:
+        return '***'
+    if p < 0.01:
+        return '**'
+    if p < 0.05:
+        return '*'
+    return ''
+
+
+def _pac_filter_pair_regions(regions, selected):
+    keep = []
+    for r in regions:
+        parts = str(r).split('_')
+        if len(parts) == 2 and parts[0] in selected and parts[1] in selected:
+            keep.append(r)
+    return keep
+
+
+def plot_pac_filtered_significance_bargraph(
+    diff_df,
+    out_dir,
+    title,
+    filename,
+    band_name='Slow gamma',
+    footer_text=None,
+    selected_regions=None,
+    allowed_pairs=None,
+):
+    if diff_df is None or diff_df.empty:
+        return
+    plot_df = diff_df[diff_df['band'] == band_name].copy()
+    if plot_df.empty:
+        return
+    if allowed_pairs is not None:
+        keep = [r for r in plot_df['Region'].unique() if r in set(allowed_pairs)]
+    else:
+        selected = set(selected_regions) if selected_regions is not None else PAC_FILTERED_SELECTED_ROIS
+        keep = _pac_filter_pair_regions(plot_df['Region'].unique(), selected)
+    plot_df = plot_df[plot_df['Region'].isin(keep)]
+    if plot_df.empty:
+        return
+    if allowed_pairs is not None:
+        order_lookup = {p: i for i, p in enumerate(allowed_pairs)}
+        roi_order = sorted(plot_df['Region'].unique(), key=lambda r: order_lookup.get(r, 999))
+    else:
+        roi_order = sorted(plot_df['Region'].unique())
+    if not roi_order:
+        return
+
+    from scipy import stats as _stats
+    pvals = []
+    for roi in roi_order:
+        vals = plot_df.loc[plot_df['Region'] == roi, 'mean_pac_diff'].dropna().to_numpy()
+        if len(vals) >= 2 and np.std(vals, ddof=1) > 0:
+            _, p = _stats.ttest_1samp(vals, 0.0)
+        else:
+            p = np.nan
+        pvals.append(p)
+    pvals = np.asarray(pvals, dtype=float)
+    valid = ~np.isnan(pvals)
+    adj = np.full(len(pvals), np.nan)
+    if valid.sum() > 0:
+        adj[valid] = _pac_bh_fdr(pvals[valid])
+
+    UNIFORM_BAR_GRAY = '#A0A0A0'
+    bar_colors = {roi: UNIFORM_BAR_GRAY for roi in roi_order}
+    fig_width = max(13.0, min(20.0, 7.0 + 1.0 * len(roi_order)))
+    fig, ax = plt.subplots(figsize=(fig_width, 9.5))
+    summary = plot_df.groupby('Region')['mean_pac_diff'].agg(['mean', 'sem']).reindex(roi_order)
+    x = np.arange(len(roi_order))
+    sig_flags = [(not np.isnan(adj[i]) and adj[i] < 0.05) for i in range(len(roi_order))]
+    rng = np.random.default_rng(7)
+    bars = ax.bar(
+        x,
+        summary['mean'].to_numpy(),
+        yerr=summary['sem'].fillna(0).to_numpy(),
+        color=[bar_colors[roi] for roi in roi_order],
+        edgecolor='#4D4D4D', linewidth=1.2, width=0.72,
+        capsize=3, ecolor='#4D4D4D', zorder=1,
+    )
+    for i, bar in enumerate(bars):
+        if sig_flags[i]:
+            bar.set_edgecolor('red')
+            bar.set_linewidth(3.0)
+    for idx, roi in enumerate(roi_order):
+        roi_vals = plot_df.loc[plot_df['Region'] == roi, 'mean_pac_diff'].dropna().to_numpy()
+        if len(roi_vals) == 0:
+            continue
+        jitter = rng.uniform(-0.16, 0.16, len(roi_vals))
+        ax.scatter(
+            np.full(len(roi_vals), idx, dtype=float) + jitter,
+            roi_vals,
+            c='#404040', s=42, alpha=0.75, edgecolors='none', zorder=3,
+        )
+    ax.axhline(0, color='#4D4D4D', linewidth=1.2, zorder=0)
+
+    if 'Remembered Trials' in title:
+        _trial = 'Remembered Trials'
+    elif 'Forgotten Trials' in title:
+        _trial = 'Forgotten Trials'
+    else:
+        _trial = 'All Trials'
+    ax.set_title(f'{_trial} - {band_name}', fontsize=30, fontweight='bold')
+    ax.set_xlabel('')
+    ax.set_xticks(x)
+    xtick_labels = [f'{roi} *' if sig_flags[i] else roi for i, roi in enumerate(roi_order)]
+    ax.set_xticklabels(xtick_labels, rotation=35, ha='right', fontsize=18, fontweight='bold')
+    ax.tick_params(axis='y', labelsize=22, width=2, length=6)
+    ax.tick_params(axis='x', width=2, length=6)
+    ax.set_ylabel('MI Difference (Stim - No Stim)', fontsize=27, fontweight='bold')
+    full_caption = (footer_text or '') + (
+        ' Significance: paired t-test (stim vs no-stim) per region pair on theta-phase / slow-gamma-amplitude MI, '
+        'Benjamini-Hochberg FDR-corrected across pairs. Pairs with q<.05 are marked with a red bar border and a * next to the pair label.'
+    )
+    save_figure_output(
+        fig,
+        out_dir / filename,
+        footer_text=full_caption,
+        rect=[0, 0.06, 1, 1],
+    )
+
+
 def plot_grouped_condition_bars(
     condition_df,
     out_dir,
@@ -481,6 +634,17 @@ def load_blaes_encoding_pac():
         df = df.copy()
         df['Region'] = df['Region'].map(clean_region_label)
         df['stimulation'] = pd.to_numeric(df['stimulation'], errors='coerce')
+        # AMME-timing fix: For amyg045-amyg072 the stimulation column has 4
+        # values: 0=nostim, 1=Before stim, 2=During stim, 3=After stim.
+        # Drop Before/During stim trials and recode After stim (3) -> 1 so the
+        # downstream code (which treats stimulation==1 as the stim trial)
+        # works unchanged. Older AMME / BLAES patients only have 0/1 so are
+        # unaffected.
+        amme_timing_pts = {f'amyg{n:03d}'
+                           for n in (45, 46, 48, 54, 57, 59, 61, 66, 72)}
+        amme_mask = df['Patient'].astype(str).isin(amme_timing_pts)
+        df = df[~(amme_mask & df['stimulation'].isin([1, 2]))].copy()
+        df.loc[amme_mask & (df['stimulation'] == 3), 'stimulation'] = 1
         df = df[df['stimulation'].isin([0, 1])].copy()
         if 'ret_response' in df.columns:
             df['memory_cond'] = df['ret_response'].map(MEMORY_LABELS)
@@ -776,6 +940,22 @@ def plot_bc_bar_graph(
             footer_text=footer_text,
             rect=[0, 0, 1, 0.92],
         )
+    plot_pac_filtered_significance_bargraph(
+        diff_df,
+        out_dir,
+        title=f'{label} Encoding MI Difference (Stim - No Stim) - BLA Pairs',
+        filename='Bargraph_PAC_MIDiff_byROI_encoding_filtered_sig_BLApairs.png',
+        footer_text=footer_text,
+        allowed_pairs=PAC_BLA_PANEL_PAIRS,
+    )
+    plot_pac_filtered_significance_bargraph(
+        diff_df,
+        out_dir,
+        title=f'{label} Encoding MI Difference (Stim - No Stim) - ALLHPC/EC/PRC Pairs',
+        filename='Bargraph_PAC_MIDiff_byROI_encoding_filtered_sig_nonBLApairs.png',
+        footer_text=footer_text,
+        allowed_pairs=PAC_NONBLA_PANEL_PAIRS,
+    )
     plot_grouped_condition_bars(
         compute_condition_band_df(data['diff_stim'], data['diff_nostim'], freqs, PAC_BANDS),
         out_dir,
@@ -1370,6 +1550,22 @@ def plot_bc_bar_by_memory(
                 footer_text=footer_text,
                 rect=[0, 0, 1, 0.92],
             )
+        plot_pac_filtered_significance_bargraph(
+            subset,
+            out_dir,
+            title=f'{label} Encoding MI Difference (Stim - No Stim), {memory_label} Trials - BLA Pairs',
+            filename=f'Bargraph_PAC_MIDiff_byROI_encoding_{memory_cond}_filtered_sig_BLApairs.png',
+            footer_text=footer_text,
+            allowed_pairs=PAC_BLA_PANEL_PAIRS,
+        )
+        plot_pac_filtered_significance_bargraph(
+            subset,
+            out_dir,
+            title=f'{label} Encoding MI Difference (Stim - No Stim), {memory_label} Trials - ALLHPC/EC/PRC Pairs',
+            filename=f'Bargraph_PAC_MIDiff_byROI_encoding_{memory_cond}_filtered_sig_nonBLApairs.png',
+            footer_text=footer_text,
+            allowed_pairs=PAC_NONBLA_PANEL_PAIRS,
+        )
         stim_dict, nostim_dict = mem_source_lookup[memory_cond]
         plot_grouped_condition_bars(
             compute_condition_band_df(stim_dict, nostim_dict, freqs, PAC_BANDS),

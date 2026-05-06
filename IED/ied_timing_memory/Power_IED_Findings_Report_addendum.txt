@@ -1,0 +1,42 @@
+Power_IED_Findings_Report Addendum
+Hippocampal Restriction Check for During-Stim IED Trials
+
+Question
+Were the during-stim IED trials effectively restricted to hippocampal regions only?
+
+Answer
+No. During-stim IEDs were hippocampal-dominant, but they were not restricted to
+hippocampal regions only.
+
+Dataset and rule
+Raw encoding IED detections were taken from:
+IED/AMMEBLAES_IEDs_trial_level_dissertation_study_usethis_cleaned_with_memory.csv
+
+The during-stim window was defined as rows with DuringStim == Y.
+Hippocampal involvement was defined from the raw Region label as either:
+- Hippocampus
+- Amygdala, Hippocampus
+No separate CA or DG labels appeared among during-stim detections in this raw sheet.
+
+Detection-level result
+There were 445 during-stim IED detections across 24 patients and 224 unique trials.
+Of these, 313 / 445 (70.3%) involved a hippocampal region, whereas 132 / 445
+(29.7%) were non-hippocampal. This hippocampal proportion was significantly
+higher than the non-hippocampal proportion (exact binomial p < .001).
+
+Unique trial-level result
+Across the 224 unique patient-trials with at least one during-stim IED:
+- 150 / 224 (67.0%) were hippocampal-only
+- 20 / 224 (8.9%) were mixed hippocampal + non-hippocampal
+- 54 / 224 (24.1%) were non-hippocampal-only
+
+Thus, 170 / 224 trials (75.9%) included any hippocampal during-stim IED, but the
+set was not hippocampal-only overall. Hippocampal-only trials were significantly
+more common than non-hippocampal-only trials (exact binomial p < .001).
+
+Interpretation
+The during-stim timing window in the power/IED report is not limited to
+hippocampal events, but the sample is strongly weighted toward hippocampal
+involvement. That pattern is consistent with a hippocampal-dominant receiver
+interference account, while still leaving a meaningful minority of during-stim
+IED trials in non-hippocampal regions.

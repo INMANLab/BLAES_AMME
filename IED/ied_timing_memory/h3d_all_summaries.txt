@@ -1,0 +1,958 @@
+
+========== S1_channel ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ channel_spread_c * stim + (1 | patient_id)
+   Data: spread
+Control: ctrl
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    915.1     938.6    -452.6     905.1       797 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-3.3880 -0.9969  0.4224  0.6928  1.0572 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 0.8247   0.9081  
+Number of obs: 802, groups:  patient_id, 33
+
+Fixed effects:
+                      Estimate Std. Error z value Pr(>|z|)    
+(Intercept)            1.04161    0.22372   4.656 3.23e-06 ***
+channel_spread_c       0.01628    0.03265   0.499    0.618    
+stim                   0.01969    0.17077   0.115    0.908    
+channel_spread_c:stim -0.04446    0.03868  -1.149    0.250    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) chnn__ stim  
+chnnl_sprd_ -0.007              
+stim        -0.439  0.007       
+chnnl_spr_: -0.005 -0.656  0.007
+
+========== S2_region ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ region_spread_c * stim + (1 | patient_id)
+   Data: spread
+Control: ctrl
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    916.0     939.4    -453.0     906.0       797 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-3.2709 -0.9979  0.4181  0.6894  1.0786 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 0.8212   0.9062  
+Number of obs: 802, groups:  patient_id, 33
+
+Fixed effects:
+                      Estimate Std. Error z value Pr(>|z|)    
+(Intercept)           1.047919   0.223452   4.690 2.74e-06 ***
+region_spread_c      -0.090326   0.170970  -0.528    0.597    
+stim                  0.019540   0.170757   0.114    0.909    
+region_spread_c:stim -0.007614   0.210072  -0.036    0.971    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) rgn_s_ stim  
+regn_sprd_c -0.037              
+stim        -0.438 -0.005       
+rgn_sprd_c:  0.007 -0.664  0.028
+
+========== S3_crossregion ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ cross_region * stim + (1 | patient_id)
+   Data: spread
+Control: ctrl
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    914.9     938.3    -452.4     904.9       797 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-3.3977 -1.0067  0.4173  0.6766  1.0755 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 0.883    0.9397  
+Number of obs: 802, groups:  patient_id, 33
+
+Fixed effects:
+                  Estimate Std. Error z value Pr(>|z|)    
+(Intercept)        1.19290    0.25836   4.617 3.89e-06 ***
+cross_region      -0.40595    0.31790  -1.277    0.202    
+stim              -0.06228    0.20787  -0.300    0.764    
+cross_region:stim  0.25206    0.36026   0.700    0.484    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) crss_r stim  
+cross_regin -0.468              
+stim        -0.488  0.398       
+crss_rgn:st  0.298 -0.673 -0.568
+
+========== S4_withinregion ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ within_region_c * stim + (1 | patient_id)
+   Data: spread
+Control: ctrl
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    914.8     938.2    -452.4     904.8       797 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-3.3674 -0.9702  0.4262  0.6771  1.0863 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 0.8252   0.9084  
+Number of obs: 802, groups:  patient_id, 33
+
+Fixed effects:
+                      Estimate Std. Error z value Pr(>|z|)    
+(Intercept)           1.049573   0.224067   4.684 2.81e-06 ***
+within_region_c       0.002925   0.109923   0.027    0.979    
+stim                  0.015306   0.170935   0.090    0.929    
+within_region_c:stim -0.139953   0.141883  -0.986    0.324    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) wthn__ stim  
+withn_rgn_c -0.042              
+stim        -0.440  0.038       
+wthn_rgn_c:  0.007 -0.697 -0.013
+
+========== Coh: BLA_HPC_Theta_Channel Spread ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ pat_channel_spread_z * stim * coh_theta_z + (1 | patient_id)
+   Data: coh_pair
+Control: ctrl
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+   1831.8    1880.8    -906.9    1813.8      1705 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-4.4150 -0.4664  0.4267  0.6271  3.1443 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 1.374    1.172   
+Number of obs: 1714, groups:  patient_id, 14
+
+Fixed effects:
+                                        Estimate Std. Error z value Pr(>|z|)   
+(Intercept)                            0.8752686  0.3315665   2.640   0.0083 **
+pat_channel_spread_z                   0.0001313  0.3130426   0.000   0.9997   
+stim                                   0.0807503  0.1257442   0.642   0.5208   
+coh_theta_z                           -0.0360377  0.0955736  -0.377   0.7061   
+pat_channel_spread_z:stim              0.0752381  0.1286216   0.585   0.5586   
+pat_channel_spread_z:coh_theta_z       0.1156113  0.0973980   1.187   0.2352   
+stim:coh_theta_z                       0.0759528  0.1233323   0.616   0.5380   
+pat_channel_spread_z:stim:coh_theta_z  0.0998916  0.1266063   0.789   0.4301   
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) pt_c__ stim   ch_th_ pt___: p___:_ stm:__
+pt_chnnl_s_ -0.105                                          
+stim        -0.230 -0.002                                   
+coh_theta_z -0.008  0.012  0.019                            
+pt_chnnl__: -0.003 -0.227  0.076 -0.032                     
+pt_chn__:__  0.012  0.005 -0.034 -0.044  0.002              
+stm:ch_tht_  0.007 -0.007 -0.004 -0.773  0.075  0.038       
+pt_ch__::__ -0.009  0.003  0.070  0.036  0.056 -0.762  0.067
+
+========== Coh: BLA_HPC_Theta_Region Spread ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ pat_region_spread_z * stim * coh_theta_z + (1 | patient_id)
+   Data: coh_pair
+Control: ctrl
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+   1835.6    1884.7    -908.8    1817.6      1705 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-4.1649 -0.4226  0.4583  0.6497  2.9639 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 0.9759   0.9879  
+Number of obs: 1714, groups:  patient_id, 14
+
+Fixed effects:
+                                     Estimate Std. Error z value Pr(>|z|)    
+(Intercept)                           0.95571    0.28567   3.345 0.000821 ***
+pat_region_spread_z                  -0.55207    0.24663  -2.238 0.025191 *  
+stim                                  0.06183    0.12502   0.495 0.620893    
+coh_theta_z                          -0.03408    0.09535  -0.357 0.720752    
+pat_region_spread_z:stim              0.07428    0.12838   0.579 0.562850    
+pat_region_spread_z:coh_theta_z       0.03665    0.08711   0.421 0.673990    
+stim:coh_theta_z                      0.02239    0.12144   0.184 0.853712    
+pat_region_spread_z:stim:coh_theta_z -0.04849    0.11936  -0.406 0.684577    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) pt_r__ stim   ch_th_ pt___: p___:_ stm:__
+pt_rgn_spr_ -0.129                                          
+stim        -0.269  0.011                                   
+coh_theta_z -0.012  0.006  0.023                            
+pt_rgn_sp_:  0.010 -0.290  0.015 -0.016                     
+pt_rgn__:__  0.006 -0.036 -0.012 -0.054  0.064              
+stm:ch_tht_  0.012 -0.003 -0.023 -0.784 -0.005  0.042       
+pt_rg__::__ -0.003  0.029 -0.011  0.041 -0.074 -0.731 -0.011
+
+========== Coh: BLA_HPC_Theta_Cross-Region ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ pat_cross_region_z * stim * coh_theta_z + (1 | patient_id)
+   Data: coh_pair
+Control: ctrl
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+   1838.1    1887.1    -910.0    1820.1      1705 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-4.3269 -0.4397  0.4394  0.6505  2.8653 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 1.27     1.127   
+Number of obs: 1714, groups:  patient_id, 14
+
+Fixed effects:
+                                     Estimate Std. Error z value Pr(>|z|)   
+(Intercept)                          0.908799   0.320412   2.836  0.00456 **
+pat_cross_region_z                  -0.224067   0.286919  -0.781  0.43484   
+stim                                 0.062665   0.124967   0.501  0.61605   
+coh_theta_z                         -0.033680   0.095121  -0.354  0.72329   
+pat_cross_region_z:stim              0.008306   0.123820   0.067  0.94652   
+pat_cross_region_z:coh_theta_z       0.080097   0.085114   0.941  0.34668   
+stim:coh_theta_z                     0.022890   0.121369   0.189  0.85041   
+pat_cross_region_z:stim:coh_theta_z -0.145545   0.116570  -1.249  0.21182   
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) pt_c__ stim   ch_th_ pt___: p___:_ stm:__
+pt_crss_rg_ -0.120                                          
+stim        -0.238  0.013                                   
+coh_theta_z -0.011  0.014  0.023                            
+pt_crss_r_:  0.011 -0.234  0.009 -0.037                     
+pt_crs__:__  0.014 -0.016 -0.033 -0.037  0.038              
+stm:ch_tht_  0.011 -0.009 -0.022 -0.783  0.006  0.029       
+pt_cr__::__ -0.009  0.016 -0.002  0.028 -0.037 -0.731 -0.016
+
+========== Coh: BLA_HPC_Theta_Within-Region Spread ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ pat_within_region_z * stim * coh_theta_z + (1 | patient_id)
+   Data: coh_pair
+Control: ctrl
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+   1832.5    1881.5    -907.3    1814.5      1705 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-4.2658 -0.4721  0.4512  0.6489  3.1600 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 0.9146   0.9564  
+Number of obs: 1714, groups:  patient_id, 14
+
+Fixed effects:
+                                     Estimate Std. Error z value Pr(>|z|)    
+(Intercept)                           1.03717    0.28246   3.672 0.000241 ***
+pat_within_region_z                  -0.69290    0.25159  -2.754 0.005886 ** 
+stim                                  0.04250    0.12612   0.337 0.736137    
+coh_theta_z                          -0.03553    0.09888  -0.359 0.719363    
+pat_within_region_z:stim              0.18042    0.13127   1.374 0.169303    
+pat_within_region_z:coh_theta_z       0.01783    0.09582   0.186 0.852366    
+stim:coh_theta_z                      0.02254    0.12402   0.182 0.855782    
+pat_within_region_z:stim:coh_theta_z  0.04537    0.12630   0.359 0.719420    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) pt_w__ stim   ch_th_ pt___: p___:_ stm:__
+pt_wthn_rg_ -0.217                                          
+stim        -0.281  0.047                                   
+coh_theta_z -0.012  0.008  0.022                            
+pt_wthn_r_:  0.046 -0.315 -0.079 -0.016                     
+pt_wth__:__  0.007 -0.031 -0.010 -0.249  0.056              
+stm:ch_tht_  0.011 -0.008 -0.023 -0.796  0.003  0.198       
+pt_wt__::__ -0.004  0.018 -0.003  0.189 -0.075 -0.759 -0.158
+
+========== Coh: BLA_HPC_Slow Gamma_Channel Spread ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ pat_channel_spread_z * stim * coh_slow_gamma_z + (1 |  
+    patient_id)
+   Data: coh_pair
+Control: ctrl
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+   1836.6    1885.6    -909.3    1818.6      1705 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-4.2946 -0.4350  0.4490  0.6513  2.5733 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 1.34     1.158   
+Number of obs: 1714, groups:  patient_id, 14
+
+Fixed effects:
+                                           Estimate Std. Error z value Pr(>|z|)
+(Intercept)                                 0.87266    0.32776   2.662  0.00776
+pat_channel_spread_z                       -0.00790    0.30952  -0.026  0.97964
+stim                                        0.06804    0.12539   0.543  0.58735
+coh_slow_gamma_z                            0.05884    0.09725   0.605  0.54517
+pat_channel_spread_z:stim                   0.05718    0.12779   0.447  0.65458
+pat_channel_spread_z:coh_slow_gamma_z       0.08400    0.09274   0.906  0.36507
+stim:coh_slow_gamma_z                      -0.16243    0.12774  -1.272  0.20353
+pat_channel_spread_z:stim:coh_slow_gamma_z -0.15449    0.12097  -1.277  0.20157
+                                             
+(Intercept)                                **
+pat_channel_spread_z                         
+stim                                         
+coh_slow_gamma_z                             
+pat_channel_spread_z:stim                    
+pat_channel_spread_z:coh_slow_gamma_z        
+stim:coh_slow_gamma_z                        
+pat_channel_spread_z:stim:coh_slow_gamma_z   
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) pt_c__ stim   ch_s__ pt___: p___:_ st:___
+pt_chnnl_s_ -0.104                                          
+stim        -0.233 -0.003                                   
+ch_slw_gmm_  0.007 -0.004 -0.017                            
+pt_chnnl__: -0.004 -0.231  0.077  0.005                     
+pt_ch__:___ -0.004 -0.003  0.007 -0.123 -0.004              
+stm:ch_sl__ -0.010 -0.001  0.010 -0.760 -0.020  0.100       
+pt_c__::___  0.001 -0.007 -0.019  0.099 -0.032 -0.757 -0.021
+
+========== Coh: BLA_HPC_Slow Gamma_Region Spread ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ pat_region_spread_z * stim * coh_slow_gamma_z + (1 |  
+    patient_id)
+   Data: coh_pair
+Control: ctrl
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+   1833.6    1882.6    -907.8    1815.6      1705 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-4.2471 -0.4294  0.4494  0.6452  2.8601 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 0.9832   0.9916  
+Number of obs: 1714, groups:  patient_id, 14
+
+Fixed effects:
+                                          Estimate Std. Error z value Pr(>|z|)
+(Intercept)                                0.95471    0.28672   3.330 0.000869
+pat_region_spread_z                       -0.55531    0.24750  -2.244 0.024854
+stim                                       0.05995    0.12517   0.479 0.631960
+coh_slow_gamma_z                           0.07794    0.09686   0.805 0.420999
+pat_region_spread_z:stim                   0.07619    0.12830   0.594 0.552588
+pat_region_spread_z:coh_slow_gamma_z       0.02531    0.10748   0.236 0.813819
+stim:coh_slow_gamma_z                     -0.16426    0.12676  -1.296 0.195036
+pat_region_spread_z:stim:coh_slow_gamma_z  0.03546    0.14752   0.240 0.810058
+                                             
+(Intercept)                               ***
+pat_region_spread_z                       *  
+stim                                         
+coh_slow_gamma_z                             
+pat_region_spread_z:stim                     
+pat_region_spread_z:coh_slow_gamma_z         
+stim:coh_slow_gamma_z                        
+pat_region_spread_z:stim:coh_slow_gamma_z    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) pt_r__ stim   ch_s__ pt___: p___:_ st:___
+pt_rgn_spr_ -0.128                                          
+stim        -0.269  0.009                                   
+ch_slw_gmm_  0.006 -0.026 -0.013                            
+pt_rgn_sp_:  0.008 -0.289  0.015  0.041                     
+pt_rg__:___ -0.021 -0.034  0.037  0.117  0.050              
+stm:ch_sl__ -0.008  0.018  0.012 -0.762 -0.036 -0.086       
+pt_r__::___  0.013  0.016 -0.033 -0.082 -0.038 -0.718  0.129
+
+========== Coh: BLA_HPC_Slow Gamma_Cross-Region ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ pat_cross_region_z * stim * coh_slow_gamma_z + (1 |  
+    patient_id)
+   Data: coh_pair
+Control: ctrl
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+   1837.2    1886.2    -909.6    1819.2      1705 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-4.3697 -0.4086  0.4484  0.6492  2.5763 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 1.278    1.13    
+Number of obs: 1714, groups:  patient_id, 14
+
+Fixed effects:
+                                          Estimate Std. Error z value Pr(>|z|)
+(Intercept)                               0.907758   0.321338   2.825  0.00473
+pat_cross_region_z                       -0.223874   0.287772  -0.778  0.43659
+stim                                      0.058074   0.125019   0.465  0.64228
+coh_slow_gamma_z                          0.071870   0.095887   0.750  0.45353
+pat_cross_region_z:stim                   0.010033   0.123762   0.081  0.93539
+pat_cross_region_z:coh_slow_gamma_z      -0.005223   0.089151  -0.059  0.95328
+stim:coh_slow_gamma_z                    -0.164350   0.125736  -1.307  0.19118
+pat_cross_region_z:stim:coh_slow_gamma_z  0.069180   0.121450   0.570  0.56894
+                                           
+(Intercept)                              **
+pat_cross_region_z                         
+stim                                       
+coh_slow_gamma_z                           
+pat_cross_region_z:stim                    
+pat_cross_region_z:coh_slow_gamma_z        
+stim:coh_slow_gamma_z                      
+pat_cross_region_z:stim:coh_slow_gamma_z   
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) pt_c__ stim   ch_s__ pt___: p___:_ st:___
+pt_crss_rg_ -0.119                                          
+stim        -0.238  0.012                                   
+ch_slw_gmm_  0.007 -0.026 -0.017                            
+pt_crss_r_:  0.010 -0.235  0.008  0.045                     
+pt_cr__:___ -0.024 -0.013  0.041  0.054  0.011              
+stm:ch_sl__ -0.008  0.020  0.017 -0.762 -0.038 -0.040       
+pt_c__::___  0.017  0.005 -0.034 -0.037  0.012 -0.728  0.038
+
+========== Coh: BLA_HPC_Slow Gamma_Within-Region Spread ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ pat_within_region_z * stim * coh_slow_gamma_z + (1 |  
+    patient_id)
+   Data: coh_pair
+Control: ctrl
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+   1828.5    1877.6    -905.3    1810.5      1705 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-4.5235 -0.4358  0.4390  0.6440  3.1066 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 0.9286   0.9636  
+Number of obs: 1714, groups:  patient_id, 14
+
+Fixed effects:
+                                          Estimate Std. Error z value Pr(>|z|)
+(Intercept)                                1.04457    0.28447   3.672 0.000241
+pat_within_region_z                       -0.69951    0.25277  -2.767 0.005650
+stim                                       0.03505    0.12644   0.277 0.781630
+coh_slow_gamma_z                           0.04927    0.09722   0.507 0.612299
+pat_within_region_z:stim                   0.18509    0.13114   1.411 0.158128
+pat_within_region_z:coh_slow_gamma_z       0.16583    0.09717   1.707 0.087908
+stim:coh_slow_gamma_z                     -0.14079    0.12634  -1.114 0.265094
+pat_within_region_z:stim:coh_slow_gamma_z -0.15856    0.13501  -1.174 0.240226
+                                             
+(Intercept)                               ***
+pat_within_region_z                       ** 
+stim                                         
+coh_slow_gamma_z                             
+pat_within_region_z:stim                     
+pat_within_region_z:coh_slow_gamma_z      .  
+stim:coh_slow_gamma_z                        
+pat_within_region_z:stim:coh_slow_gamma_z    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) pt_w__ stim   ch_s__ pt___: p___:_ st:___
+pt_wthn_rg_ -0.219                                          
+stim        -0.281  0.050                                   
+ch_slw_gmm_ -0.011  0.018  0.024                            
+pt_wthn_r_:  0.048 -0.308 -0.083 -0.050                     
+pt_wt__:___  0.022 -0.051 -0.048 -0.089  0.080              
+stm:ch_sl__  0.005 -0.015 -0.017 -0.768  0.049  0.075       
+pt_w__::___ -0.017  0.030  0.047  0.071 -0.045 -0.707 -0.075
+
+========== PAC: BLA_HPC_PAC Stim x Memory_Channel Spread ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ pat_channel_spread_z * stim * pac_interaction_z + (1 |  
+    patient_id)
+   Data: sp
+Control: ctrl
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    445.8     481.8    -213.9     427.8       396 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-4.0212 -0.7307  0.3617  0.6180  1.3685 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 0.6276   0.7922  
+Number of obs: 405, groups:  patient_id, 13
+
+Fixed effects:
+                                            Estimate Std. Error z value
+(Intercept)                                  0.95413    0.31204   3.058
+pat_channel_spread_z                        -0.28261    0.49357  -0.573
+stim                                         0.09847    0.27160   0.363
+pac_interaction_z                            0.25492    0.31638   0.806
+pat_channel_spread_z:stim                    0.16767    0.41646   0.403
+pat_channel_spread_z:pac_interaction_z      -0.83465    0.45536  -1.833
+stim:pac_interaction_z                      -0.50886    0.26726  -1.904
+pat_channel_spread_z:stim:pac_interaction_z  0.22882    0.37464   0.611
+                                            Pr(>|z|)   
+(Intercept)                                  0.00223 **
+pat_channel_spread_z                         0.56693   
+stim                                         0.71695   
+pac_interaction_z                            0.42038   
+pat_channel_spread_z:stim                    0.68723   
+pat_channel_spread_z:pac_interaction_z       0.06681 . 
+stim:pac_interaction_z                       0.05691 . 
+pat_channel_spread_z:stim:pac_interaction_z  0.54135   
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) pt_c__ stim   pc_nt_ pt___: p___:_ stm:__
+pt_chnnl_s_  0.008                                          
+stim        -0.499  0.026                                   
+pc_ntrctn_z  0.009 -0.106 -0.050                            
+pt_chnnl__:  0.031 -0.517  0.078  0.049                     
+pt_chn__:__ -0.079  0.711  0.103 -0.023 -0.384              
+stm:pc_ntr_ -0.029  0.066 -0.060 -0.472 -0.123 -0.051       
+pt_ch__::__  0.120 -0.384 -0.148 -0.067  0.689 -0.491  0.134
+
+========== PAC: BLA_HPC_PAC Stim x Memory_Region Spread ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ pat_region_spread_z * stim * pac_interaction_z + (1 |  
+    patient_id)
+   Data: sp
+Control: ctrl
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    430.4     466.4    -206.2     412.4       396 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-3.9776 -0.7108  0.3989  0.6248  1.4069 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 0.1696   0.4119  
+Number of obs: 405, groups:  patient_id, 13
+
+Fixed effects:
+                                           Estimate Std. Error z value Pr(>|z|)
+(Intercept)                                 1.34327    0.27097   4.957 7.15e-07
+pat_region_spread_z                        -0.04290    0.23826  -0.180   0.8571
+stim                                       -0.15774    0.29147  -0.541   0.5884
+pac_interaction_z                           0.19771    0.27363   0.723   0.4699
+pat_region_spread_z:stim                    0.01231    0.28512   0.043   0.9655
+pat_region_spread_z:pac_interaction_z      -1.05504    0.23048  -4.578 4.70e-06
+stim:pac_interaction_z                     -0.46853    0.29971  -1.563   0.1180
+pat_region_spread_z:stim:pac_interaction_z  0.53129    0.26887   1.976   0.0482
+                                              
+(Intercept)                                ***
+pat_region_spread_z                           
+stim                                          
+pac_interaction_z                             
+pat_region_spread_z:stim                      
+pat_region_spread_z:pac_interaction_z      ***
+stim:pac_interaction_z                        
+pat_region_spread_z:stim:pac_interaction_z *  
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) pt_r__ stim   pc_nt_ pt___: p___:_ stm:__
+pt_rgn_spr_ -0.093                                          
+stim        -0.711  0.082                                   
+pc_ntrctn_z  0.157 -0.443 -0.167                            
+pt_rgn_sp_:  0.097 -0.609  0.031  0.318                     
+pt_rgn__:__ -0.304 -0.315  0.221  0.251  0.149              
+stm:pc_ntr_ -0.166  0.340  0.030 -0.679 -0.456 -0.159       
+pt_rg__::__  0.208  0.168 -0.339 -0.153 -0.340 -0.581  0.339
+
+========== PAC: BLA_HPC_PAC Stim x Memory_Cross-Region ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ pat_cross_region_z * stim * pac_interaction_z + (1 |  
+    patient_id)
+   Data: sp
+Control: ctrl
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    430.9     466.9    -206.4     412.9       396 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-4.4332 -0.7197  0.4493  0.6506  1.3894 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 0.09325  0.3054  
+Number of obs: 405, groups:  patient_id, 13
+
+Fixed effects:
+                                          Estimate Std. Error z value Pr(>|z|)
+(Intercept)                                1.16328    0.24726   4.705 2.54e-06
+pat_cross_region_z                        -0.33175    0.24607  -1.348   0.1776
+stim                                      -0.05627    0.28073  -0.200   0.8411
+pac_interaction_z                          0.08894    0.24115   0.369   0.7123
+pat_cross_region_z:stim                    0.20017    0.29203   0.685   0.4931
+pat_cross_region_z:pac_interaction_z      -1.14298    0.22309  -5.123 3.00e-07
+stim:pac_interaction_z                    -0.42862    0.28143  -1.523   0.1278
+pat_cross_region_z:stim:pac_interaction_z  0.51739    0.26940   1.920   0.0548
+                                             
+(Intercept)                               ***
+pat_cross_region_z                           
+stim                                         
+pac_interaction_z                            
+pat_cross_region_z:stim                      
+pat_cross_region_z:pac_interaction_z      ***
+stim:pac_interaction_z                       
+pat_cross_region_z:stim:pac_interaction_z .  
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) pt_c__ stim   pc_nt_ pt___: p___:_ stm:__
+pt_crss_rg_ -0.233                                          
+stim        -0.751  0.193                                   
+pc_ntrctn_z  0.185 -0.263 -0.183                            
+pt_crss_r_:  0.199 -0.717 -0.105  0.223                     
+pt_crs__:__ -0.305  0.329  0.245  0.159 -0.261              
+stm:pc_ntr_ -0.169  0.227  0.053 -0.693 -0.223 -0.090       
+pt_cr__::__  0.241 -0.246 -0.277 -0.084  0.256 -0.668  0.262
+
+========== PAC: BLA_HPC_PAC Stim x Memory_Within-Region Spread ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ pat_within_region_z * stim * pac_interaction_z + (1 |  
+    patient_id)
+   Data: sp
+Control: ctrl
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    435.1     471.1    -208.5     417.1       396 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-4.2102 -0.7142  0.3875  0.5886  1.4002 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 0.305    0.5523  
+Number of obs: 405, groups:  patient_id, 13
+
+Fixed effects:
+                                           Estimate Std. Error z value Pr(>|z|)
+(Intercept)                                  1.2236     0.2912   4.202 2.65e-05
+pat_within_region_z                         -0.3973     0.2606  -1.525   0.1273
+stim                                        -0.1222     0.2858  -0.428   0.6690
+pac_interaction_z                            0.3772     0.2875   1.312   0.1895
+pat_within_region_z:stim                     0.1049     0.2685   0.391   0.6961
+pat_within_region_z:pac_interaction_z       -0.8179     0.2262  -3.616   0.0003
+stim:pac_interaction_z                      -0.5320     0.2839  -1.874   0.0609
+pat_within_region_z:stim:pac_interaction_z   0.4698     0.2339   2.009   0.0446
+                                              
+(Intercept)                                ***
+pat_within_region_z                           
+stim                                          
+pac_interaction_z                             
+pat_within_region_z:stim                      
+pat_within_region_z:pac_interaction_z      ***
+stim:pac_interaction_z                     .  
+pat_within_region_z:stim:pac_interaction_z *  
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) pt_w__ stim   pc_nt_ pt___: p___:_ stm:__
+pt_wthn_rg_ -0.233                                          
+stim        -0.671  0.125                                   
+pc_ntrctn_z  0.201 -0.275 -0.209                            
+pt_wthn_r_:  0.164 -0.604 -0.134  0.280                     
+pt_wth__:__ -0.208 -0.013  0.234  0.010 -0.053              
+stm:pc_ntr_ -0.214  0.293  0.142 -0.650 -0.297 -0.060       
+pt_wt__::__  0.217 -0.011 -0.255 -0.048  0.053 -0.605  0.128
+
+========== PAC: BLA_HPC_PAC Stim on Rem_Channel Spread ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ pat_channel_spread_z * stim * pac_stim_rem_z + (1 |  
+    patient_id)
+   Data: sp
+Control: ctrl
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    439.8     475.9    -210.9     421.8       396 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-5.1053 -0.6563  0.3965  0.6421  1.5236 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 0.5268   0.7258  
+Number of obs: 405, groups:  patient_id, 13
+
+Fixed effects:
+                                         Estimate Std. Error z value Pr(>|z|)
+(Intercept)                                0.8979     0.2985   3.008  0.00263
+pat_channel_spread_z                      -0.1921     0.4312  -0.446  0.65592
+stim                                       0.1774     0.2782   0.638  0.52378
+pac_stim_rem_z                             0.4344     0.3123   1.391  0.16414
+pat_channel_spread_z:stim                  0.2005     0.3863   0.519  0.60383
+pat_channel_spread_z:pac_stim_rem_z       -0.7698     0.3661  -2.103  0.03547
+stim:pac_stim_rem_z                       -0.7737     0.2854  -2.711  0.00672
+pat_channel_spread_z:stim:pac_stim_rem_z   0.1728     0.3207   0.539  0.58998
+                                           
+(Intercept)                              **
+pat_channel_spread_z                       
+stim                                       
+pac_stim_rem_z                             
+pat_channel_spread_z:stim                  
+pat_channel_spread_z:pac_stim_rem_z      * 
+stim:pac_stim_rem_z                      **
+pat_channel_spread_z:stim:pac_stim_rem_z   
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) pt_c__ stim   pc_s__ pt___: p___:_ st:___
+pt_chnnl_s_  0.086                                          
+stim        -0.500 -0.048                                   
+pc_stm_rm_z -0.049  0.000 -0.059                            
+pt_chnnl__: -0.044 -0.532  0.212 -0.032                     
+pt_ch__:___  0.039  0.658 -0.006  0.040 -0.368              
+stm:pc_st__ -0.040  0.003 -0.111 -0.449 -0.124 -0.066       
+pt_c__::___  0.023 -0.365 -0.074 -0.112  0.563 -0.467  0.191
+
+========== PAC: BLA_HPC_PAC Stim on Rem_Region Spread ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: 
+memory ~ pat_region_spread_z * stim * pac_stim_rem_z + (1 | patient_id)
+   Data: sp
+Control: ctrl
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    431.7     467.7    -206.8     413.7       396 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-4.9272 -0.7057  0.3879  0.6741  1.4170 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 0.2181   0.467   
+Number of obs: 405, groups:  patient_id, 13
+
+Fixed effects:
+                                         Estimate Std. Error z value Pr(>|z|)
+(Intercept)                              1.261649   0.271253   4.651  3.3e-06
+pat_region_spread_z                     -0.266216   0.212614  -1.252 0.210529
+stim                                    -0.004564   0.297514  -0.015 0.987760
+pac_stim_rem_z                           0.364699   0.269859   1.351 0.176555
+pat_region_spread_z:stim                 0.142674   0.258384   0.552 0.580825
+pat_region_spread_z:pac_stim_rem_z      -0.980402   0.286216  -3.425 0.000614
+stim:pac_stim_rem_z                     -0.933819   0.329680  -2.832 0.004619
+pat_region_spread_z:stim:pac_stim_rem_z -0.014691   0.375166  -0.039 0.968763
+                                           
+(Intercept)                             ***
+pat_region_spread_z                        
+stim                                       
+pac_stim_rem_z                             
+pat_region_spread_z:stim                   
+pat_region_spread_z:pac_stim_rem_z      ***
+stim:pac_stim_rem_z                     ** 
+pat_region_spread_z:stim:pac_stim_rem_z    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) pt_r__ stim   pc_s__ pt___: p___:_ st:___
+pt_rgn_spr_ -0.172                                          
+stim        -0.649  0.137                                   
+pc_stm_rm_z  0.080 -0.302 -0.121                            
+pt_rgn_sp_:  0.152 -0.556 -0.011  0.202                     
+pt_rg__:___ -0.281 -0.142  0.189  0.244  0.005              
+stm:pc_st__ -0.116  0.188 -0.125 -0.547 -0.306 -0.124       
+pt_r__::___  0.162  0.011 -0.372 -0.137 -0.106 -0.438  0.512
+
+========== PAC: BLA_HPC_PAC Stim on Rem_Cross-Region ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ pat_cross_region_z * stim * pac_stim_rem_z + (1 | patient_id)
+   Data: sp
+Control: ctrl
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    432.0     468.1    -207.0     414.0       396 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-4.9171 -0.6742  0.4050  0.6926  1.4833 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 0.09693  0.3113  
+Number of obs: 405, groups:  patient_id, 13
+
+Fixed effects:
+                                       Estimate Std. Error z value Pr(>|z|)    
+(Intercept)                             1.09163    0.23671   4.612 3.99e-06 ***
+pat_cross_region_z                     -0.37105    0.23620  -1.571  0.11620    
+stim                                    0.03449    0.28207   0.122  0.90267    
+pac_stim_rem_z                          0.36908    0.22586   1.634  0.10223    
+pat_cross_region_z:stim                 0.09825    0.29777   0.330  0.74144    
+pat_cross_region_z:pac_stim_rem_z      -0.95601    0.22238  -4.299 1.72e-05 ***
+stim:pac_stim_rem_z                    -0.86474    0.29776  -2.904  0.00368 ** 
+pat_cross_region_z:stim:pac_stim_rem_z  0.03695    0.31528   0.117  0.90670    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) pt_c__ stim   pc_s__ pt___: p___:_ st:___
+pt_crss_rg_ -0.265                                          
+stim        -0.708  0.209                                   
+pc_stm_rm_z  0.140 -0.170 -0.138                            
+pt_crss_r_:  0.202 -0.672 -0.071  0.139                     
+pt_cr__:___ -0.252  0.428  0.191  0.065 -0.321              
+stm:pc_st__ -0.124  0.120 -0.085 -0.615 -0.151 -0.032       
+pt_c__::___  0.179 -0.280 -0.291 -0.054  0.301 -0.544  0.357
+
+========== PAC: BLA_HPC_PAC Stim on Rem_Within-Region Spread ==========
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: 
+memory ~ pat_within_region_z * stim * pac_stim_rem_z + (1 | patient_id)
+   Data: sp
+Control: ctrl
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    431.0     467.0    -206.5     413.0       396 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-4.0738 -0.7013  0.3910  0.5857  1.4259 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 0.2217   0.4708  
+Number of obs: 405, groups:  patient_id, 13
+
+Fixed effects:
+                                        Estimate Std. Error z value Pr(>|z|)
+(Intercept)                              1.25201    0.27437   4.563 5.04e-06
+pat_within_region_z                     -0.45893    0.23519  -1.951  0.05101
+stim                                    -0.06949    0.29038  -0.239  0.81088
+pac_stim_rem_z                           0.38001    0.26618   1.428  0.15339
+pat_within_region_z:stim                 0.17537    0.26403   0.664  0.50657
+pat_within_region_z:pac_stim_rem_z      -0.92266    0.25862  -3.568  0.00036
+stim:pac_stim_rem_z                     -0.83783    0.29916  -2.801  0.00510
+pat_within_region_z:stim:pac_stim_rem_z  0.19454    0.30053   0.647  0.51741
+                                           
+(Intercept)                             ***
+pat_within_region_z                     .  
+stim                                       
+pac_stim_rem_z                             
+pat_within_region_z:stim                   
+pat_within_region_z:pac_stim_rem_z      ***
+stim:pac_stim_rem_z                     ** 
+pat_within_region_z:stim:pac_stim_rem_z    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) pt_w__ stim   pc_s__ pt___: p___:_ st:___
+pt_wthn_rg_ -0.278                                          
+stim        -0.678  0.165                                   
+pc_stm_rm_z  0.109 -0.241 -0.134                            
+pt_wthn_r_:  0.201 -0.610 -0.155  0.193                     
+pt_wt__:___ -0.266  0.115  0.239  0.173 -0.157              
+stm:pc_st__ -0.141  0.205 -0.003 -0.594 -0.194 -0.119       
+pt_w__::___  0.211 -0.107 -0.305 -0.121  0.157 -0.558  0.354
