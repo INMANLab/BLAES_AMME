@@ -91,6 +91,72 @@ def add_allhpc_region(
     return pd.concat([grouped] + pooled_frames, ignore_index=True)
 
 
+# --- Fixed panel layouts (per user spec) -------------------------------------
+# Power layout: 4 rows x 3 cols.
+#   col 0: ALLHPC, HPC, CA, DG          (hippocampus + subregions)
+#   col 1: PRC, EC                       (rhinal cortex)
+#   col 2: BLA                           (amygdala)
+POWER_LAYOUT_GRID = (4, 3)
+POWER_PANEL_SLOTS = {
+    "ALLHPC": (0, 0), "HPC": (1, 0), "CA": (2, 0), "DG": (3, 0),
+    "PRC":    (0, 1), "EC":  (1, 1),
+    "BLA":    (0, 2),
+}
+
+# Coherence / PAC layout: 4 rows x 4 cols.
+#   col 0: hipp & subregions x BLA
+#   col 1: hipp & subregions x PRC
+#   col 2: hipp & subregions x EC
+#   col 3: BLA-PRC, BLA-EC, EC-PRC
+# Pair lookup uses unordered region pairs (frozenset) so that, e.g.,
+# 'EC_HPC' (alphabetic naming used by coherence) and 'HPC_EC' (used by some
+# PAC outputs) both map to the same slot.
+COH_PAC_LAYOUT_GRID = (4, 4)
+COH_PAC_PANEL_SLOTS = {
+    frozenset({"ALLHPC", "BLA"}): (0, 0),
+    frozenset({"HPC", "BLA"}):    (1, 0),
+    frozenset({"CA", "BLA"}):     (2, 0),
+    frozenset({"DG", "BLA"}):     (3, 0),
+    frozenset({"ALLHPC", "PRC"}): (0, 1),
+    frozenset({"HPC", "PRC"}):    (1, 1),
+    frozenset({"CA", "PRC"}):     (2, 1),
+    frozenset({"DG", "PRC"}):     (3, 1),
+    frozenset({"ALLHPC", "EC"}):  (0, 2),
+    frozenset({"HPC", "EC"}):     (1, 2),
+    frozenset({"CA", "EC"}):      (2, 2),
+    frozenset({"DG", "EC"}):      (3, 2),
+    frozenset({"BLA", "PRC"}):    (0, 3),
+    frozenset({"BLA", "EC"}):     (1, 3),
+    frozenset({"EC", "PRC"}):     (2, 3),
+}
+
+
+def get_panel_position(modality: str, region: str):
+    """Return (row, col) for the user-defined layout, or None if no slot.
+
+    For power, `region` is a single region name (e.g. 'ALLHPC', 'BLA').
+    For coherence/PAC, `region` is 'X_Y' regardless of order; matching is
+    by unordered pair so 'EC_HPC' and 'HPC_EC' both resolve to the same slot.
+    """
+    if modality == "power":
+        return POWER_PANEL_SLOTS.get(region)
+    parts = region.split("_")
+    if len(parts) != 2:
+        return None
+    return COH_PAC_PANEL_SLOTS.get(frozenset(parts))
+
+
+def panel_grid_for(modality: str, n_memory_cells: int = 1):
+    """Return (nrows, ncols) for the figure grid.
+
+    `n_memory_cells` doubles the column count for stim/nostim figures where
+    each region slot holds Remembered + Forgotten side-by-side.
+    """
+    nrows, ncols = (POWER_LAYOUT_GRID if modality == "power"
+                    else COH_PAC_LAYOUT_GRID)
+    return nrows, ncols * n_memory_cells
+
+
 # --- Cluster permutation per family ------------------------------------------
 
 def _find_clusters(t_vals: np.ndarray, t_thresh: float) -> list[tuple]:

@@ -14,7 +14,9 @@
 #       GLMM    : Accuracy ~ band_c + StimCond + Region +
 #                            Region:StimCond + (1|Patient)      (one model per band)
 #
-# band_c is grand-mean-centered (matches the original H1c convention).
+# band_c is the raw band value (no centering by default). On GLMM convergence
+# failure the band is grand-mean-centered as a numerical-stability fallback;
+# see _glmm_centering_log.csv in OUT_BASE for which panels used the fallback.
 #
 # DG drop rule: a panel/region with < 4 unique patients is dropped (and never
 # enters the FDR family). MIN_PATIENTS = 4.
@@ -72,8 +74,8 @@ SCOPES <- list(
   ),
   HPCrhinal = list(
     power_regions = c("ALLHPC", "EC", "PRC"),
-    coh_pairs     = c("ALLHPC_EC", "ALLHPC_PRC"),
-    pac_pairs     = c("ALLHPC_EC", "ALLHPC_PRC"),
+    coh_pairs     = c("ALLHPC_EC", "ALLHPC_PRC", "EC_PRC"),
+    pac_pairs     = c("ALLHPC_EC", "ALLHPC_PRC", "EC_PRC"),
     glmm_ref_power = "ALLHPC", glmm_ref_pair = "ALLHPC_EC",
     needs_allhpc  = TRUE
   ),
@@ -85,6 +87,8 @@ SCOPES <- list(
     needs_allhpc  = FALSE
   ),
   HippSubRhinal = list(
+    # EC_PRC is owned by the HPCrhinal scope; excluded here to avoid
+    # double-testing the same pair in two FDR families.
     power_regions = c("CA", "DG", "HPC", "EC", "PRC"),
     coh_pairs     = c("CA_EC", "DG_EC", "EC_HPC", "CA_PRC", "DG_PRC", "HPC_PRC"),
     pac_pairs     = c("CA_EC", "DG_EC", "EC_HPC", "CA_PRC", "DG_PRC", "HPC_PRC"),

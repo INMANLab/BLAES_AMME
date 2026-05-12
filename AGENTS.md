@@ -8,12 +8,15 @@ All outputs should go to outputs/ folder. Never write anywhere else
 Never install libraries. Only use the existing python environment
 
 # Version Control
-This repo has no remote — commits are local checkpoints only. Do not attempt `git push`.
-
 After each time you update a script:
 
-1. Run `git add .`
-2. Run `git commit` with a useful message that clearly describes the change so the history is easy to follow and revert if needed
+1. Stage code files only — never run `git add .` blindly. Add specific files by name (e.g. `git add foo.py bar.py`) so data, figures, and large artifacts can't slip in.
+2. Before committing, run `git status` and `git diff --cached --stat` to confirm only code is staged. If anything non-code (CSV, PDF, PNG, PPTX, GIF, NPY, MAT, FIF, EDF, H5, model checkpoints, anything in `outputs/` or `to_combine/`) appears, unstage it with `git restore --staged <path>` and add it to `.gitignore` if missing.
+3. Reject any single file larger than ~5 MB. Check with `git diff --cached --stat` — if a file is unexpectedly large, do not commit it; investigate first.
+4. Run `git commit` with a useful message that clearly describes the change so the history is easy to follow and revert if needed.
+5. Run `git push origin main`.
+
+Repo policy: code only. No data, no figures, no notebooks-with-output, no binaries. `.gitignore` already excludes `*.pdf`, `*.csv`, `*.png`, `*.pptx`, `*.gif`, `outputs/`, `to_combine/`, `.venv/`, `__pycache__/`. If you find yourself wanting to commit something not covered by those patterns, stop and ask.
 
 # Combined Notebook -> Python Workflow
 When converting analysis notebooks in `to_combine/` into combined `.py` scripts:

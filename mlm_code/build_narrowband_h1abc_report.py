@@ -1,25 +1,11 @@
 #!/usr/bin/env python
-"""
-Build a single FDR-corrected retrieval PDF for one
-(measure, scope, modeltype) combination produced by
-run_h1abc_full_retrieval.R.
+"""Build narrow-band retrieval PDF report for one (measure, scope, modeltype).
 
-Family = (this PDF) x (band). Theta and slow gamma are corrected separately.
-
-LMM (cont/quad)
-  - One panel per region/pair per band.
-  - FDR-BH applied to the omnibus LR test (m1 vs m0) p-value, one per panel.
-  - Coefficients table shows raw p only.
-  - Sequential model build table m1 row shows raw p AND q (FDR).
-
-GLMM
-  - One model per band (Region as fixed factor).
-  - FDR-BH applied to the Region:StimCond interaction p-values within band.
-  - Coefficient table shows raw p AND q (FDR) inline; q only on
-    Region:StimCond rows (other rows blank).
+Mirrors build_h1abc_full_report.py but reads from the narrow-band stats folder
+and adds per-region freq ranges in the panel headers.
 
 Usage:
-  python build_h1abc_full_report.py <measure> <scope> <modeltype>
+  python build_narrowband_h1abc_report.py <measure> <scope> <modeltype>
     measure   power | coherence | pac
     scope     BLAMTL | HPCrhinal | HippSubBLA | HippSubRhinal
     modeltype LMMcont | LMMquad | GLMM
@@ -33,35 +19,31 @@ import pandas as pd
 from fpdf import FPDF
 
 
-# First arg may be phase ("retrieval" / "encoding"); defaults to retrieval.
-_argv = list(sys.argv[1:])
-if _argv and _argv[0] in ("retrieval", "encoding"):
-    PHASE = _argv.pop(0)
-else:
-    PHASE = "retrieval"
-
-if len(_argv) < 3:
-    print("Usage: python build_h1abc_full_report.py "
-          "[retrieval|encoding] <measure> <scope> <modeltype>")
+if len(sys.argv) < 4:
+    print("Usage: python build_narrowband_h1abc_report.py "
+          "<measure> <scope> <modeltype>")
     sys.exit(1)
 
-MEASURE = _argv[0]
-SCOPE = _argv[1]
-MODELTYPE = _argv[2]
+MEASURE = sys.argv[1]
+SCOPE = sys.argv[2]
+MODELTYPE = sys.argv[3]
 assert MEASURE in ("power", "coherence", "pac")
 assert SCOPE in ("BLAMTL", "HPCrhinal", "HippSubBLA", "HippSubRhinal")
 assert MODELTYPE in ("LMMcont", "LMMquad", "GLMM")
 
 REPO_ROOT = "/Users/martinahollearn/Library/CloudStorage/Box-Box/InmanLab/BLAES_data/dissertation/AMME_BLAES"
-PHASE_FOLDER = "retrieval_memory_reports" if PHASE == "retrieval" else "encoding_memory_reports"
+PHASE = "retrieval"
+PHASE_LABEL = "Retrieval"
+PHASE_FOLDER = "retrieval memory reports permutation test based"
+
 CSV_DIR = os.path.join(
     REPO_ROOT, "OUTPUTS", PHASE_FOLDER,
-    "stats", f"h1abc_full_{PHASE}_mlm",
+    "stats", "narrowband_h1abc_retrieval_mlm",
     f"{MEASURE}_{SCOPE}_{MODELTYPE}",
 )
 OUT_DIR = os.path.join(REPO_ROOT, "OUTPUTS", PHASE_FOLDER)
 FAMILY_DIR = os.path.join(OUT_DIR, "stats",
-                          f"fdr_{MEASURE}_{SCOPE}_{MODELTYPE}_{PHASE}")
+                          f"fdr_{MEASURE}_{SCOPE}_{MODELTYPE}_narrowband")
 os.makedirs(FAMILY_DIR, exist_ok=True)
 
 SCOPE_LABELS = {
@@ -73,67 +55,51 @@ SCOPE_LABELS = {
 MODEL_LABELS = {
     "LMMcont": "LMM, memory modulation continuous (mem_mod_z)",
     "LMMquad": "LMM, quad responder group",
-    "GLMM":    "GLMM, Accuracy ~ band_c + StimCond + Region + Region:StimCond",
-}
-PHASE_LABEL = "Retrieval" if PHASE == "retrieval" else "Encoding"
-
-# Default scopes mirror the R driver.
-SCOPES = {
-    "BLAMTL": dict(
-        power_regions=["BLA", "ALLHPC", "EC", "PRC"],
-        coh_pairs=["BLA_ALLHPC", "BLA_EC", "BLA_PRC"],
-        pac_pairs=["BLA_ALLHPC", "BLA_EC", "BLA_PRC"],
-    ),
-    "HPCrhinal": dict(
-        power_regions=["ALLHPC", "EC", "PRC"],
-        coh_pairs=["ALLHPC_EC", "ALLHPC_PRC", "EC_PRC"],
-        pac_pairs=["ALLHPC_EC", "ALLHPC_PRC", "EC_PRC"],
-    ),
-    "HippSubBLA": dict(
-        power_regions=["BLA", "CA", "DG", "HPC"],
-        coh_pairs=["BLA_CA", "BLA_DG", "BLA_HPC"],
-        pac_pairs=["BLA_CA", "BLA_DG", "BLA_HPC"],
-    ),
-    "HippSubRhinal": dict(
-        # EC_PRC is owned by the HPCrhinal scope; excluded here to avoid
-        # double-testing the same pair in two FDR families.
-        power_regions=["CA", "DG", "HPC", "EC", "PRC"],
-        coh_pairs=["CA_EC", "DG_EC", "EC_HPC", "CA_PRC", "DG_PRC", "HPC_PRC"],
-        pac_pairs=["CA_EC", "DG_EC", "EC_HPC", "CA_PRC", "DG_PRC", "HPC_PRC"],
-    ),
+    "GLMM":    "GLMM, Accuracy ~ band_c + StimCond + band_c:StimCond",
 }
 
-if MEASURE == "power":
-    UNITS = SCOPES[SCOPE]["power_regions"]
-elif MEASURE == "coherence":
-    UNITS = SCOPES[SCOPE]["coh_pairs"]
-else:
-    UNITS = SCOPES[SCOPE]["pac_pairs"]
-
-BANDS = ["slow_gamma"] if MEASURE == "pac" else ["theta", "slow_gamma"]
-BAND_LABELS = {
-    "theta": "Theta (4-8 Hz)",
-    "slow_gamma": ("SG PAC (30-50 Hz)" if MEASURE == "pac"
-                   else "Slow Gamma (30-55 Hz)"),
+# Load the narrow-band freq ranges that were used. If file is missing,
+# the combo had no panels.
+NB_USED_PATH = os.path.join(CSV_DIR, "_narrow_bands_used.csv")
+if not os.path.exists(NB_USED_PATH):
+    print(f"No narrow bands used for {MEASURE}/{SCOPE}/{MODELTYPE}; "
+          f"nothing to render.")
+    sys.exit(0)
+NB_USED = pd.read_csv(NB_USED_PATH)
+# UNITS_BANDS = (region, family) pairs in the order they appear in the CSV.
+UNITS_BANDS = [(r["region"], f"narrow_{r['family']}")
+               for _, r in NB_USED.iterrows()]
+# The 'basis' column was removed when narrow bands moved to per-modality;
+# the source-cluster summary is captured in 'source_summary' instead.
+def _get(row, col, default=""):
+    return row[col] if col in row.index else default
+NB_LOOKUP = {
+    (r["region"], f"narrow_{r['family']}"): (
+        r["narrow_lo_hz"], r["narrow_hi_hz"],
+        _get(r, "source_summary",
+             _get(r, "basis", ""))
+    )
+    for _, r in NB_USED.iterrows()
 }
+
+# Bands present in this combo (theta and/or slow_gamma).
+BANDS = []
+for _, family in UNITS_BANDS:
+    if family not in BANDS:
+        BANDS.append(family)
 
 REPORT_TITLE = (
-    f"H1abc - {MEASURE.capitalize()} - {SCOPE_LABELS[SCOPE]} - "
-    f"{MODEL_LABELS[MODELTYPE]} - {PHASE_LABEL} - ImBalanced Trials"
+    f"NarrowBand - {MEASURE.capitalize()} - {SCOPE_LABELS[SCOPE]} - "
+    f"{MODEL_LABELS[MODELTYPE]} - {PHASE_LABEL} - cluster-derived bands"
 )
 PDF_NAME = (f"{PHASE_LABEL}_{MEASURE.capitalize()}_{SCOPE}_{MODELTYPE}"
-            f"_FDRcorrected_ImBalanced.pdf")
+            f"_FDRcorrected_NarrowBand.pdf")
 OUTPUT_PDF = os.path.join(OUT_DIR, PDF_NAME)
 
 
 # ---------------------------------------------------------------------------
-# Formatting
+# Formatting helpers (mirrored from build_h1abc_full_report.py)
 # ---------------------------------------------------------------------------
-
-def display_unit(u):
-    return u.replace("_", "-")
-
-
 def num_str(v, decimals=4):
     if pd.isna(v):
         return ""
@@ -178,31 +144,27 @@ def fmt_fit(v, decimals=2):
     return f"{float(v):.{decimals}f}"
 
 
+def display_unit(u):
+    return u.replace("_", "-")
+
+
 def pretty_term(term):
     if term == "(Intercept)":
         return "(Intercept)"
     if term == "mem_mod_z":
         return "Memory Modulation Z"
     if term == "band_c":
-        return "band"
+        return "Narrow Band"
     if term == "StimCondstim":
         return "StimCond (stim vs nostim)"
+    if term == "band_c:StimCondstim":
+        return "Narrow Band x StimCond"
+    if term == "StimCondstim:band_c":
+        return "Narrow Band x StimCond"
     if term.startswith("QuadResponderGroup"):
         return "Responder Status: " + term.replace("QuadResponderGroup", "")
-    if term.startswith("Region") and ":" not in term:
-        return f"Region: {term.replace('Region', '')}"
-    if term.startswith("StimCondstim:Region"):
-        return f"StimCond x Region: {term.replace('StimCondstim:Region', '')}"
-    if term.startswith("Region") and ":StimCondstim" in term:
-        # broom.mixed sometimes flips order
-        return ("StimCond x Region: "
-                + term.replace(":StimCondstim", "").replace("Region", ""))
     return term
 
-
-# ---------------------------------------------------------------------------
-# Data loading & FDR
-# ---------------------------------------------------------------------------
 
 def bh_fdr(pvals):
     p = np.asarray(pvals, dtype=float)
@@ -223,16 +185,14 @@ def bh_fdr(pvals):
     return out
 
 
-def load_panel(unit, band):
-    """Load one panel's coef + anova CSVs (works for LMM and per-region GLMM)."""
-    coefs_p = os.path.join(CSV_DIR, f"{MEASURE}_{unit}_{band}_coefs.csv")
-    anova_p = os.path.join(CSV_DIR, f"{MEASURE}_{unit}_{band}_anova.csv")
+def load_panel(unit, band_label):
+    coefs_p = os.path.join(CSV_DIR, f"{MEASURE}_{unit}_{band_label}_coefs.csv")
+    anova_p = os.path.join(CSV_DIR, f"{MEASURE}_{unit}_{band_label}_anova.csv")
     if not (os.path.exists(coefs_p) and os.path.exists(anova_p)):
         return None, None
     return pd.read_csv(coefs_p), pd.read_csv(anova_p)
 
 
-# Focal-coefficient targets for FDR within each model type.
 QUAD_TERMS = ["QuadResponderGroupAntiResp",
               "QuadResponderGroupModerate",
               "QuadResponderGroupStrong"]
@@ -241,7 +201,6 @@ LMM_CONT_TERM = "mem_mod_z"
 
 
 def get_term_p(coefs_df, term):
-    """Return raw p-value for a term, or NaN if not present."""
     if coefs_df is None or coefs_df.empty:
         return np.nan
     row = coefs_df[coefs_df["term"] == term]
@@ -250,10 +209,17 @@ def get_term_p(coefs_df, term):
     return float(row["p.value"].iloc[0])
 
 
+def focal_terms_for_modeltype():
+    if MODELTYPE == "LMMcont":
+        return [LMM_CONT_TERM]
+    if MODELTYPE == "LMMquad":
+        return list(QUAD_TERMS)
+    return [GLMM_INTERACTION_TERM]
+
+
 # ---------------------------------------------------------------------------
 # PDF
 # ---------------------------------------------------------------------------
-
 class APAReport(FPDF):
     def __init__(self):
         super().__init__()
@@ -280,11 +246,6 @@ class APAReport(FPDF):
         self.ln(2)
         self.cell(0, 7, title, new_x="LMARGIN", new_y="NEXT")
         self.ln(1)
-
-    def subsubsection_title(self, title):
-        self.set_font("Helvetica", "B", 10)
-        self.ln(1)
-        self.cell(0, 6, title, new_x="LMARGIN", new_y="NEXT")
 
     def body_text(self, text):
         self.set_font("Times", "", 11)
@@ -345,35 +306,40 @@ class APAReport(FPDF):
             self.ln(2)
 
 
-# ---------------------------------------------------------------------------
-# FDR family computation
-#
-# All three model types render per-region/pair panels; what differs is the
-# focal coefficient that gets FDR-corrected within each band.
-#
-#   LMMcont : focal term = mem_mod_z                       (1 family per band)
-#   LMMquad : focal terms = QuadResponderGroupAntiResp /
-#             Moderate / Strong                            (3 families per band)
-#   GLMM    : focal term = band_c:StimCondstim             (1 family per band)
-# ---------------------------------------------------------------------------
-
-def focal_terms_for_modeltype():
+def model_overview_text():
     if MODELTYPE == "LMMcont":
-        return [LMM_CONT_TERM]
+        return ("Per region/pair, fit:  feature ~ mem_mod_z + (1 | Patient). "
+                "feature = mean of diff_Freq columns within the region's "
+                "narrow band (cluster-derived freq range from the per-freq "
+                "permutation test). FDR-BH applied to mem_mod_z slope p-value "
+                "across panels within each band family (narrow_theta and "
+                "narrow_slow_gamma corrected separately).")
     if MODELTYPE == "LMMquad":
-        return list(QUAD_TERMS)
-    return [GLMM_INTERACTION_TERM]
+        return ("Per region/pair, fit:  feature ~ QuadResponderGroup + "
+                "(1 | Patient). Reference: Non-responders. Three contrasts "
+                "(AntiResp, Moderate, Strong vs NonResp) each FDR-BH corrected "
+                "as their own family within each narrow band.")
+    return ("Per region/pair, fit:  Accuracy ~ band_c + StimCond + "
+            "band_c:StimCond + (1 | Patient). band_c = mean within the "
+            "region's narrow band (cluster-derived). FDR-BH applied to the "
+            "band_c:StimCond interaction p-value across panels within each "
+            "narrow band family.")
+
+
+def is_focal_term(term):
+    return term in focal_terms_for_modeltype()
 
 
 def compute_families():
-    """Return {band: {term: {unit -> (p_raw, q_FDR)}}}."""
+    """{band_label: {term: {unit -> (p_raw, q_FDR)}}}"""
     out = {}
     terms = focal_terms_for_modeltype()
     for band in BANDS:
         out[band] = {}
+        units_in_band = [u for (u, b) in UNITS_BANDS if b == band]
         for term in terms:
             rows = []
-            for u in UNITS:
+            for u in units_in_band:
                 coefs, _ = load_panel(u, band)
                 rows.append({"unit": u, "p_raw": get_term_p(coefs, term)})
             df = pd.DataFrame(rows)
@@ -394,46 +360,17 @@ def compute_families():
     return out
 
 
-# ---------------------------------------------------------------------------
-# Rendering
-# ---------------------------------------------------------------------------
-
-def model_overview_text():
-    if MODELTYPE == "LMMcont":
-        return ("Per region/pair, fit:  feature ~ mem_mod_z + (1 | Patient). "
-                "mem_mod_z = z-scored avg_stim_dprime_diff (between-patient). "
-                "FDR-BH is applied to the mem_mod_z slope p-value across all "
-                "panels within each band (theta and slow gamma corrected "
-                "separately).")
-    if MODELTYPE == "LMMquad":
-        return ("Per region/pair, fit:  feature ~ QuadResponderGroup + "
-                "(1 | Patient). Reference: Non-responders. Three contrasts "
-                "(AntiResp, Moderate, Strong vs NonResp) each FDR-BH corrected "
-                "as their own family within each band - 3 sub-families per "
-                "band, one per contrast.")
-    return ("Per region/pair, fit:  Accuracy ~ band_c + StimCond + "
-            "band_c:StimCond + (1 | Patient). band_c is the raw band value; "
-            "if the model fails to converge it is grand-mean-centered as a "
-            "numerical-stability fallback (see _glmm_centering_log.csv). "
-            "Estimates are odds ratios. FDR-BH is applied to the "
-            "band_c:StimCond interaction p-value across panels within each "
-            "band.")
-
-
-def is_focal_term(term):
-    return term in focal_terms_for_modeltype()
-
-
 def render_panel(pdf, u, band, families_band):
     coefs, anova = load_panel(u, band)
+    lo, hi, _src = NB_LOOKUP.get((u, band), (None, None, ""))
+    range_str = (f" [{lo:.2f}-{hi:.2f} Hz]" if lo is not None else "")
     if coefs is None:
         pdf.subsection_title(
-            f"{display_unit(u)} -- skipped (no fit; <4 patients or missing "
-            f"data)"
-        )
+            f"{display_unit(u)}{range_str} -- skipped (no fit; <4 patients "
+            f"or missing data)")
         return
 
-    pdf.subsection_title(display_unit(u))
+    pdf.subsection_title(f"{display_unit(u)}{range_str}")
 
     is_glmm = MODELTYPE == "GLMM"
     headers = ["Predictor",
@@ -465,8 +402,8 @@ def render_panel(pdf, u, band, families_band):
         ("Table. Fixed-effect Coefficients (odds ratios)" if is_glmm
          else "Table. Fixed-effect Coefficients"),
         headers, coef_rows, col_widths=col_widths,
-        note=("q (FDR-BH) within this band is applied only on the focal "
-              "term(s) for this model type; other rows show raw p only."),
+        note=("q (FDR-BH) within this narrow band is applied only on the "
+              "focal term(s) for this model type; other rows show raw p only."),
     )
 
     anova_rows = []
@@ -475,7 +412,8 @@ def render_panel(pdf, u, band, families_band):
             str(r["Model"]),
             (str(r["Formula"])
                 .replace("QuadResponderGroup", "Responder Status")
-                .replace("mem_mod_z", "Memory Modulation Z")),
+                .replace("mem_mod_z", "Memory Modulation Z")
+                .replace("band_c", "NarrowBand")),
             f"{int(r['npar'])}" if pd.notna(r["npar"]) else "-",
             fmt_fit(r["AIC"], 1),
             fmt_fit(r["BIC"], 1),
@@ -495,6 +433,12 @@ def render_panel(pdf, u, band, families_band):
     )
 
 
+BAND_DISPLAY = {
+    "narrow_theta": "Narrow Theta (cluster-derived freq range, per region)",
+    "narrow_slow_gamma": "Narrow Slow Gamma (cluster-derived freq range, per region)",
+}
+
+
 def render_report():
     pdf = APAReport()
     pdf.add_page()
@@ -502,34 +446,41 @@ def render_report():
     pdf.multi_cell(
         0, 9,
         f"{PHASE_LABEL} | {MEASURE.capitalize()} | {SCOPE_LABELS[SCOPE]}\n"
-        f"{MODEL_LABELS[MODELTYPE]}"
+        f"{MODEL_LABELS[MODELTYPE]} - NarrowBand"
     )
     pdf.ln(2)
     pdf.set_font("Helvetica", "", 11)
-    pdf.cell(0, 6, "ImBalanced Trials | FDR-BH per band (coefficient-based)",
+    pdf.cell(0, 6,
+             "Cluster-derived per-region narrow bands | "
+             "FDR-BH per band family",
              new_x="LMARGIN", new_y="NEXT")
     pdf.ln(6)
 
     pdf.section_title("1. Overview")
     pdf.body_text(model_overview_text())
     pdf.body_text(
-        "Subjects BJH032 and BJH033 are folded to a single subject. Panels "
-        "with < 4 unique patients are dropped (do not enter FDR)."
+        "Narrow band freq ranges come from the per-freq cluster permutation "
+        "test (retrieval, stim_nostim contrast). Per region: if a "
+        "significant cluster appeared in both Remembered and Forgotten "
+        "subsets, the band is set to their freq-range intersection. "
+        "Otherwise the single available cluster's range is used. Subjects "
+        "BJH032/BJH033 folded; panels with <4 unique patients dropped."
     )
 
     families = compute_families()
 
     sec = 2
     for band in BANDS:
-        pdf.section_title(f"{sec}. {BAND_LABELS[band]}")
+        pdf.section_title(f"{sec}. {BAND_DISPLAY.get(band, band)}")
         sec += 1
-        for u in UNITS:
+        for u, b in UNITS_BANDS:
+            if b != band:
+                continue
             render_panel(pdf, u, band, families[band])
 
     pdf.output(OUTPUT_PDF)
 
 
 render_report()
-
 print(f"PDF -> {OUTPUT_PDF}")
 print(f"Family CSVs -> {FAMILY_DIR}/")

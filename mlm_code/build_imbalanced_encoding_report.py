@@ -42,7 +42,7 @@ SET_LABELS = {
 TERM_LABELS = {
     '(Intercept)': 'Intercept',
     'StimCondstim': 'StimCond [stim]',
-    'band_c': 'Band power (centered)',
+    'band_c': 'Band power',
     'StimCondstim:band_c': 'Band x StimCond [stim]',
     'slow_gamma_pac_z': 'SG PAC (z)',
     'hfa_pac_z': 'HFA PAC (z)',
@@ -236,7 +236,9 @@ def build_report():
     pdf.body_text(
         'Band power was computed as the mean of baseline-corrected spectral '
         'power across frequencies in each band (theta: 4-8 Hz, slow gamma: '
-        '30-55 Hz, HFA: 70-100 Hz), then grand-mean centered.'
+        '30-55 Hz, HFA: 70-100 Hz). Models use the raw band value; on '
+        'convergence failure the band is grand-mean centered as a '
+        'numerical-stability fallback.'
     )
 
     for region_set in ['MTL', 'HPC_subfields']:

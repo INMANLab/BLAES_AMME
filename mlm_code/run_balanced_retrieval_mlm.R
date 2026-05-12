@@ -148,14 +148,23 @@ for (region_set_name in c("MTL", "HPC_subfields")) {
 
   for (band in c("theta", "slow_gamma", "fast_gamma")) {
     band_label <- switch(band, theta="Theta", slow_gamma="Slow Gamma", fast_gamma="HFA")
-    sub$band_c <- sub[[band]] - mean(sub[[band]], na.rm=TRUE)
+    # Try raw band first; fall back to grand-mean-centered only on convergence error.
+    sub$band_c <- sub[[band]]
 
     cat(sprintf("\n  MODEL: Power %s %s x StimCond\n", region_set_name, band_label))
 
     m <- tryCatch({
       glmer(Accuracy ~ StimCond + Region + band_c + band_c:StimCond + band_c:Region + (1 | Patient),
             data = sub, family = binomial, control = ctrl)
-    }, error = function(e) { cat("    FAILED:", conditionMessage(e), "\n"); NULL })
+    }, error = function(e) NULL)
+    if (is.null(m)) {
+      cat("    Convergence fallback: grand-mean-centered band\n")
+      sub$band_c <- sub[[band]] - mean(sub[[band]], na.rm=TRUE)
+      m <- tryCatch({
+        glmer(Accuracy ~ StimCond + Region + band_c + band_c:StimCond + band_c:Region + (1 | Patient),
+              data = sub, family = binomial, control = ctrl)
+      }, error = function(e) { cat("    FAILED:", conditionMessage(e), "\n"); NULL })
+    }
 
     if (!is.null(m)) {
       td <- save_coefs(m, sprintf("power_%s_%s_coefs.csv", region_set_name, band))
@@ -222,14 +231,23 @@ for (region_set_name in c("MTL", "HPC_subfields")) {
 
   for (band in c("theta", "slow_gamma", "fast_gamma")) {
     band_label <- switch(band, theta="Theta", slow_gamma="Slow Gamma", fast_gamma="HFA")
-    sub$band_c <- sub[[band]] - mean(sub[[band]], na.rm=TRUE)
+    # Try raw band first; fall back to grand-mean-centered only on convergence error.
+    sub$band_c <- sub[[band]]
 
     cat(sprintf("\n  MODEL: Coherence %s %s x StimCond\n", region_set_name, band_label))
 
     m <- tryCatch({
       glmer(Accuracy ~ StimCond + Region + band_c + band_c:StimCond + band_c:Region + (1 | Patient),
             data = sub, family = binomial, control = ctrl)
-    }, error = function(e) { cat("    FAILED:", conditionMessage(e), "\n"); NULL })
+    }, error = function(e) NULL)
+    if (is.null(m)) {
+      cat("    Convergence fallback: grand-mean-centered band\n")
+      sub$band_c <- sub[[band]] - mean(sub[[band]], na.rm=TRUE)
+      m <- tryCatch({
+        glmer(Accuracy ~ StimCond + Region + band_c + band_c:StimCond + band_c:Region + (1 | Patient),
+              data = sub, family = binomial, control = ctrl)
+      }, error = function(e) { cat("    FAILED:", conditionMessage(e), "\n"); NULL })
+    }
 
     if (!is.null(m)) {
       td <- save_coefs(m, sprintf("coherence_%s_%s_coefs.csv", region_set_name, band))
@@ -266,8 +284,10 @@ hfa_cols <- freq_cols_p[freqs_p >= PAC_HFA[1] & freqs_p <= PAC_HFA[2]]
 pac_bal$slow_gamma_pac <- rowMeans(pac_bal[, sg_cols, drop=FALSE], na.rm=TRUE)
 pac_bal$hfa_pac <- rowMeans(pac_bal[, hfa_cols, drop=FALSE], na.rm=TRUE)
 
-pac_bal$slow_gamma_pac_c <- pac_bal$slow_gamma_pac - mean(pac_bal$slow_gamma_pac, na.rm=TRUE)
-pac_bal$hfa_pac_c <- pac_bal$hfa_pac - mean(pac_bal$hfa_pac, na.rm=TRUE)
+# Default: use raw PAC values (no centering). Per-region fallback below
+# replaces these with grand-mean-centered values only on convergence error.
+pac_bal$slow_gamma_pac_c <- pac_bal$slow_gamma_pac
+pac_bal$hfa_pac_c <- pac_bal$hfa_pac
 
 pac_bal$Accuracy <- ifelse(pac_bal$yes_or_no == "yes", 1, 0)
 pac_bal$StimCond <- factor(ifelse(pac_bal$trial_type == "nostim", "nostim", "stim"),
@@ -286,9 +306,10 @@ for (reg in pac_regions) {
     next
   }
 
-  # Re-center within region
-  sub$slow_gamma_pac_c <- sub$slow_gamma_pac - mean(sub$slow_gamma_pac, na.rm=TRUE)
-  sub$hfa_pac_c <- sub$hfa_pac - mean(sub$hfa_pac, na.rm=TRUE)
+  # Try raw PAC values first; fall back to within-region grand-mean-centered
+  # only on convergence error.
+  sub$slow_gamma_pac_c <- sub$slow_gamma_pac
+  sub$hfa_pac_c <- sub$hfa_pac
 
   cat(sprintf("\n--- PAC %s: %d trials, %d patients ---\n",
               reg, nrow(sub), nlevels(sub$Patient)))
@@ -300,7 +321,16 @@ for (reg in pac_regions) {
   m <- tryCatch({
     glmer(Accuracy ~ (slow_gamma_pac_c + hfa_pac_c) * StimCond + (1 | Patient),
           data = sub, family = binomial, control = ctrl)
-  }, error = function(e) { cat("    FAILED:", conditionMessage(e), "\n"); NULL })
+  }, error = function(e) NULL)
+  if (is.null(m)) {
+    cat("    Convergence fallback: within-region grand-mean-centered PAC\n")
+    sub$slow_gamma_pac_c <- sub$slow_gamma_pac - mean(sub$slow_gamma_pac, na.rm=TRUE)
+    sub$hfa_pac_c <- sub$hfa_pac - mean(sub$hfa_pac, na.rm=TRUE)
+    m <- tryCatch({
+      glmer(Accuracy ~ (slow_gamma_pac_c + hfa_pac_c) * StimCond + (1 | Patient),
+            data = sub, family = binomial, control = ctrl)
+    }, error = function(e) { cat("    FAILED:", conditionMessage(e), "\n"); NULL })
+  }
 
   if (!is.null(m)) {
     td <- save_coefs(m, sprintf("pac_%s_coefs.csv", gsub("/", "_", reg)))

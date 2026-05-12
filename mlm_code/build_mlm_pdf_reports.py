@@ -648,12 +648,12 @@ def fig_title_page(title, phase, measure, n_patients, n_regions, n_obs):
                 f"Multilevel models (MLMs) examined whether phase-amplitude coupling (PAC) "
                 f"predicted memory accuracy during {phase.lower()}. "
                 f"PAC measures: {band_desc}. "
-                f"For each coupling measure, a model was fit with the PAC value (centered), "
+                f"For each coupling measure, a model was fit with the PAC value, "
                 f"stimulation condition, and region pair as fixed effects, with random intercepts "
                 f"for patients.\n\n"
                 f"Patient-level: lmer (continuous accuracy). "
                 f"Trial-level: glmer (binomial, binary accuracy). "
-                f"All PAC values were baseline-corrected (post \u2013 pre) and mean-centered."
+                f"All PAC values were baseline-corrected (post \u2013 pre)."
             )
         else:
             method_text = (
@@ -663,14 +663,14 @@ def fig_title_page(title, phase, measure, n_patients, n_regions, n_obs):
                 f"Nested models were fit per region pair, adding PAC predictors incrementally.\n\n"
                 f"Patient-level: lmer (continuous accuracy). "
                 f"Trial-level: glmer (binomial, binary accuracy). "
-                f"All PAC values were baseline-corrected (post \u2013 pre) and mean-centered."
+                f"All PAC values were baseline-corrected (post \u2013 pre)."
             )
     elif is_bbr:
         method_text = (
             f"Multilevel models (MLMs) examined whether {measure.lower()} "
             f"in individual frequency bands predicted memory accuracy during {phase.lower()}. "
             f"For each band (Theta 4\u20138 Hz, Slow Gamma 30\u201355 Hz, HFA 55\u2013100 Hz), "
-            f"a model was fit with the band value (centered), stimulation condition, and region as "
+            f"a model was fit with the band value, stimulation condition, and region as "
             f"fixed effects, with random intercepts for patients.\n\n"
             f"Patient-level: lmer (continuous accuracy). "
             f"Trial-level: glmer (binomial, binary accuracy)."
@@ -683,7 +683,7 @@ def fig_title_page(title, phase, measure, n_patients, n_regions, n_obs):
             f"Nested models were fit per brain region, adding predictors incrementally.\n\n"
             f"Patient-level: lmer (continuous accuracy). "
             f"Trial-level: glmer (binomial, binary accuracy). "
-            f"All band values were mean-centered. Random intercepts for patients."
+            f"Random intercepts for patients."
         )
 
     ax.text(0.5, 0.45, method_text, ha="center", va="center",

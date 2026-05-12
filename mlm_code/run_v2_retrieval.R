@@ -497,14 +497,23 @@ for (set_name in names(pac_sets)) {
       cat(sprintf("  Skipping %s %s PAC: near-zero SD\n", set_name, pac_label))
       next
     }
-    sub$pac_z <- as.numeric(scale(sub[[pac_col]]))
+    # Try raw PAC first; fall back to z-scored only on convergence error.
+    sub$pac_z <- sub[[pac_col]]
 
     cat(sprintf("  %s %s PAC (SD=%.6f): ", set_name, pac_label, pac_sd))
 
     m <- tryCatch({
       glmer(Accuracy ~ pac_z * StimCond + Region + (1 | Patient),
             data = sub, family = binomial, control = ctrl)
-    }, error = function(e) { cat("FAILED\n"); NULL })
+    }, error = function(e) NULL)
+    if (is.null(m)) {
+      cat("    Convergence fallback: z-scored PAC. ")
+      sub$pac_z <- as.numeric(scale(sub[[pac_col]]))
+      m <- tryCatch({
+        glmer(Accuracy ~ pac_z * StimCond + Region + (1 | Patient),
+              data = sub, family = binomial, control = ctrl)
+      }, error = function(e) { cat("FAILED\n"); NULL })
+    }
 
     if (!is.null(m)) {
       td <- save_coefs(m, sprintf("pac_%s_%s_coefs.csv", set_name, pac_type))
@@ -529,7 +538,8 @@ cat("\n--- NEW: PAC Pair x StimCond (BLA-X pairs, per PAC type) ---\n")
               paste(levels(sub_all$Region), collapse=", ")))
   for (pac_type in c("slow_gamma", "hfa")) {
     pac_col <- paste0(pac_type, "_pac")
-    sub_all$pac_z <- as.numeric(scale(sub_all[[pac_col]]))
+    # Try raw PAC first; fall back to z-scored only on convergence error.
+    sub_all$pac_z <- sub_all[[pac_col]]
     cat(sprintf("    BLA-X PAC %s Pair*StimCond: ", pac_type))
     fmls <- list(
       m0     = "Accuracy ~ 1 + (1 | Patient)",
@@ -540,6 +550,11 @@ cat("\n--- NEW: PAC Pair x StimCond (BLA-X pairs, per PAC type) ---\n")
     )
     fits <- list()
     for (nm in names(fmls)) fits[[nm]] <- safe_glmer(as.formula(fmls[[nm]]), sub_all)
+    if (any(sapply(fits, is.null))) {
+      cat("    Convergence fallback: z-scored PAC.\n")
+      sub_all$pac_z <- as.numeric(scale(sub_all[[pac_col]]))
+      for (nm in names(fmls)) fits[[nm]] <- safe_glmer(as.formula(fmls[[nm]]), sub_all)
+    }
     if (!is.null(fits$m_full)) {
       td <- save_coefs(fits$m_full, sprintf("pac_allpairs_pairbystim_%s_coefs.csv", pac_type))
       print_interaction(td, "Region.*:StimCondstim")
@@ -564,8 +579,9 @@ for (pair in BLA_PAIRS_PAC) {
     cat(sprintf("\n  Skipping pair %s: near-zero SD\n", pair))
     next
   }
-  sub$sg_pac_z <- as.numeric(scale(sub$slow_gamma_pac))
-  sub$hfa_pac_z <- as.numeric(scale(sub$hfa_pac))
+  # Try raw PAC first; fall back to z-scored only on convergence error.
+  sub$sg_pac_z <- sub$slow_gamma_pac
+  sub$hfa_pac_z <- sub$hfa_pac
   cat(sprintf("\n  Pair %s (two-PAC-type): %d trials, %d patients\n",
               pair, nrow(sub), nlevels(sub$Patient)))
   fmls <- list(
@@ -577,6 +593,12 @@ for (pair in BLA_PAIRS_PAC) {
   )
   fits <- list()
   for (nm in names(fmls)) fits[[nm]] <- safe_glmer(as.formula(fmls[[nm]]), sub)
+  if (any(sapply(fits, is.null))) {
+    cat("    Convergence fallback: z-scored PAC.\n")
+    sub$sg_pac_z <- as.numeric(scale(sub$slow_gamma_pac))
+    sub$hfa_pac_z <- as.numeric(scale(sub$hfa_pac))
+    for (nm in names(fmls)) fits[[nm]] <- safe_glmer(as.formula(fmls[[nm]]), sub)
+  }
   if (!is.null(fits$m_full)) {
     save_coefs(fits$m_full, sprintf("pac_twotype_%s_coefs.csv", pair))
     save_model_build(fits, fmls, sprintf("pac_twotype_%s_anova.csv", pair))

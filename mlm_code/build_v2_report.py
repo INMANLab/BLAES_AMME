@@ -233,7 +233,7 @@ def format_term(term):
     labels = {
         '(Intercept)': 'Intercept',
         'StimCondstim': 'StimCond [stim]',
-        'band_c': 'Band (centered)',
+        'band_c': 'Band',
         'band_c:StimCondstim': 'Band x StimCond',
         'StimCondstim:band_c': 'Band x StimCond',
         'pac_z': 'PAC (z)',

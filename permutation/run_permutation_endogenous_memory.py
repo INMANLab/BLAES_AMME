@@ -27,6 +27,8 @@ import pandas as pd
 
 from _permutation_helpers import (
     add_allhpc_region,
+    get_panel_position,
+    panel_grid_for,
     plot_region_panel_dual,
     run_family_permutations,
 )
@@ -38,14 +40,40 @@ INPUT_DIR = ROOT / "outputs" / "csvs"
 _raw_args = sys.argv[1:]
 BALANCED = "--balanced" in _raw_args
 ONESEC = "--onesec" in _raw_args
-_pos_args = [a for a in _raw_args if not a.startswith("--")]
+REGION_GROUP = None
+for _a in _raw_args:
+    if _a.startswith("--region-group="):
+        REGION_GROUP = _a.split("=", 1)[1]
+assert REGION_GROUP in (None, "mainregions", "hippsubregions")
+if REGION_GROUP and (BALANCED or ONESEC):
+    raise SystemExit(
+        "--region-group is only supported for the vanilla branch "
+        "(no --balanced, no --onesec)")
+_pos_args = [a for a in _raw_args
+             if not a.startswith("--") and "=" not in a]
 
 _branch = ("retreival_balancedtrials_onesec" if (BALANCED and ONESEC)
            else "retreival_onesec" if ONESEC
            else "retreival_balancedtrials" if BALANCED
            else "retreival")
-OUT_BASE = ROOT / "outputs" / "PermutationOutputsAlireza" / _branch / "endogenous_memory"
+_segments = [_branch]
+_segments.append(REGION_GROUP if REGION_GROUP else "allregions")
+_segments.append("endogenous_memory")
+OUT_BASE = (ROOT / "outputs" / "PermutationOutputsAlireza"
+            / Path(*_segments))
 OUT_BASE.mkdir(parents=True, exist_ok=True)
+
+MAIN_REGIONS = {"BLA", "EC", "PRC", "ALLHPC"}
+HIPPSUB_REGIONS = {"CA", "DG", "HPC"}
+
+
+def in_region_group(region, group):
+    parts = region.split("_")
+    if group == "mainregions":
+        return all(p in MAIN_REGIONS for p in parts)
+    if group == "hippsubregions":
+        return any(p in HIPPSUB_REGIONS for p in parts)
+    return True
 
 N_PERMUTATIONS = 5000
 SEED = 100
@@ -169,6 +197,13 @@ def run_modality(modality):
     if excluded:
         print(f"  Excluding: {', '.join(excluded)}")
     regions = [r for r in regions if r not in excluded]
+    if REGION_GROUP:
+        before = list(regions)
+        regions = [r for r in regions if in_region_group(r, REGION_GROUP)]
+        dropped = sorted(set(before) - set(regions))
+        if dropped:
+            print(f"  [{REGION_GROUP}] dropping out-of-group: "
+                  f"{', '.join(dropped)}")
 
     panel_results = []
     cluster_table = []
@@ -213,44 +248,86 @@ def run_modality(modality):
     n_panels = len(panel_results)
     if n_panels == 0:
         return
-    ncols = min(4, max(2, int(np.ceil(np.sqrt(n_panels)))))
-    nrows = int(np.ceil(n_panels / ncols))
-    fig, axes = plt.subplots(nrows, ncols,
-                             figsize=(ncols * 4.0, nrows * 3.2),
-                             squeeze=False)
-    axes_flat = axes.flatten()
     panel_xlim = (30.0, float(freqs.max())) if modality == "pac" else None
-    for ax, panel in zip(axes_flat, panel_results):
-        plot_region_panel_dual(
-            ax, freqs, panel["X_R"], panel["X_F"],
-            panel["clusters"], panel["region"],
-            line_color_A="#7b2d8e", line_color_B="#daa520",
-            label_A="Remembered", label_B="Forgotten",
-            fill_color="#c0392b",
-            xlim=panel_xlim,
-        )
-    for j in range(n_panels, len(axes_flat)):
-        axes_flat[j].set_visible(False)
 
+    if REGION_GROUP:
+        # Compact gap-free grid for the filtered subset.
+        nP = n_panels
+        best = None
+        for nc in range(1, nP + 1):
+            nr = int(np.ceil(nP / nc))
+            empty = nr * nc - nP
+            aspect = max(nr, nc) / max(min(nr, nc), 1)
+            score = (empty, aspect, -nc)
+            if best is None or score < best[0]:
+                best = (score, nr, nc)
+        _, nrows, ncols = best
+        fig, axes = plt.subplots(nrows, ncols,
+                                 figsize=(ncols * 4.0, nrows * 3.2),
+                                 squeeze=False)
+        for r in range(nrows):
+            for c in range(ncols):
+                axes[r][c].set_visible(False)
+        placed_axes = []
+        for i, panel in enumerate(panel_results):
+            r, c = i // ncols, i % ncols
+            ax = axes[r][c]
+            ax.set_visible(True)
+            plot_region_panel_dual(
+                ax, freqs, panel["X_R"], panel["X_F"],
+                panel["clusters"], panel["region"],
+                line_color_A="#7b2d8e", line_color_B="#daa520",
+                label_A="Remembered", label_B="Forgotten",
+                fill_color="#c0392b",
+                xlim=panel_xlim,
+            )
+            placed_axes.append(ax)
+    else:
+        nrows, ncols = panel_grid_for(modality)
+        fig, axes = plt.subplots(nrows, ncols,
+                                 figsize=(ncols * 4.0, nrows * 3.2),
+                                 squeeze=False)
+        for r in range(nrows):
+            for c in range(ncols):
+                axes[r][c].set_visible(False)
+        placed_axes = []
+        for panel in panel_results:
+            pos = get_panel_position(modality, panel["region"])
+            if pos is None:
+                print(f"  - {panel['region']}: no layout slot, skipping plot")
+                continue
+            r, c = pos
+            ax = axes[r][c]
+            ax.set_visible(True)
+            plot_region_panel_dual(
+                ax, freqs, panel["X_R"], panel["X_F"],
+                panel["clusters"], panel["region"],
+                line_color_A="#7b2d8e", line_color_B="#daa520",
+                label_A="Remembered", label_B="Forgotten",
+                fill_color="#c0392b",
+                xlim=panel_xlim,
+            )
+            placed_axes.append(ax)
+    axes_flat = placed_axes if placed_axes else [axes[0][0]]
+
+    _region_tag = REGION_GROUP if REGION_GROUP else "allregions"
     fig.suptitle(
-        f"Endogenous memory (Remembered vs Forgotten) - {modality.upper()}"
+        f"Endogenous Memory {modality.capitalize()}"
         f"{' [balanced]' if BALANCED else ''}"
-        f"{' [onesec]' if ONESEC else ''}\n"
-        f"No-stim retrieval trials, paired cluster permutation "
-        f"({N_PERMUTATIONS} samples) | dark=confirmatory sig, "
-        f"light=exploratory sig, none=ns",
-        fontsize=14, fontweight="bold", y=0.985)
+        f"{' [onesec]' if ONESEC else ''}"
+        f" [{_region_tag}]",
+        fontsize=13, fontweight="bold", y=0.985)
     handles, labels = axes_flat[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", fontsize=20,
+    fig.legend(handles, labels, loc="upper center", fontsize=18,
                frameon=True, ncol=len(labels),
                bbox_to_anchor=(0.5, 0.955))
-    fig.supxlabel("Frequency (Hz)", fontsize=20, fontweight="bold", y=0.04)
-    fig.supylabel(MODALITY_YLABEL[modality], fontsize=20, fontweight="bold",
+    fig.supxlabel("Frequency (Hz)", fontsize=18, fontweight="bold", y=0.04)
+    fig.supylabel(MODALITY_YLABEL[modality], fontsize=18, fontweight="bold",
                   x=0.035)
     fig.tight_layout(rect=[0.045, 0.05, 1, 0.93])
 
     fig_path = out_dir / f"{modality}_endogenous_memory.png"
-    fig.savefig(fig_path, dpi=160, bbox_inches="tight")
+    fig.savefig(fig_path, dpi=320, bbox_inches="tight")
     plt.close(fig)
     print(f"  Saved figure: {fig_path}")
 
@@ -268,7 +345,7 @@ def run_modality(modality):
         fontsize=11)
     fig.tight_layout()
     null_path = out_dir / f"{modality}_null_distribution.png"
-    fig.savefig(null_path, dpi=160, bbox_inches="tight")
+    fig.savefig(null_path, dpi=320, bbox_inches="tight")
     plt.close(fig)
 
 

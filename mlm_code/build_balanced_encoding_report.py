@@ -43,10 +43,10 @@ SET_LABELS = {
 TERM_LABELS = {
     '(Intercept)': 'Intercept',
     'StimCondstim': 'StimCond [stim]',
-    'band_c': 'Band power (centered)',
+    'band_c': 'Band power',
     'StimCondstim:band_c': 'Band x StimCond [stim]',
-    'slow_gamma_pac_c': 'Slow Gamma PAC (centered)',
-    'hfa_pac_c': 'HFA PAC (centered)',
+    'slow_gamma_pac_c': 'Slow Gamma PAC',
+    'hfa_pac_c': 'HFA PAC',
     'slow_gamma_pac_c:StimCondstim': 'SG PAC x StimCond [stim]',
     'hfa_pac_c:StimCondstim': 'HFA PAC x StimCond [stim]',
     'slow_gamma_pac_z': 'SG PAC (z)',
@@ -344,9 +344,11 @@ def build_report():
     pdf.body_text(
         'Band power was computed as the mean of baseline-corrected spectral '
         'power across frequencies in each band (theta: 4-8 Hz, slow gamma: '
-        '30-55 Hz, HFA: 70-100 Hz), then grand-mean centered. The Band x '
-        'StimCond interaction tests whether the power-memory relationship '
-        'differs between stim and no-stim trials.'
+        '30-55 Hz, HFA: 70-100 Hz). Models use the raw band value; on '
+        'convergence failure the band is grand-mean centered as a numerical-'
+        'stability fallback. The Band x StimCond interaction tests whether '
+        'the power-memory relationship differs between stim and no-stim '
+        'trials.'
     )
 
     for region_set in ['MTL', 'HPC_subfields']:
@@ -441,9 +443,10 @@ def build_report():
         '+ band_c:Region + (1 | Patient)'
     )
     pdf.body_text(
-        'Coherence was computed between each region pair. Band-averaged '
-        'coherence was grand-mean centered. Region here refers to the region '
-        'pair (e.g., Amygdala-HPC).'
+        'Coherence was computed between each region pair. Models use the '
+        'raw band-averaged coherence; on convergence failure it is grand-'
+        'mean centered as a numerical-stability fallback. Region here '
+        'refers to the region pair (e.g., Amygdala-HPC).'
     )
 
     for region_set in ['MTL', 'HPC_subfields']:

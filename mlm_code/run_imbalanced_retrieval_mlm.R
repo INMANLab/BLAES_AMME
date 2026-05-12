@@ -79,14 +79,23 @@ for (region_set_name in c("MTL", "HPC_subfields")) {
 
   for (band in c("theta", "slow_gamma", "fast_gamma")) {
     band_label <- switch(band, theta="Theta", slow_gamma="Slow Gamma", fast_gamma="HFA")
-    sub$band_c <- sub[[band]] - mean(sub[[band]], na.rm=TRUE)
+    # Try raw band first; fall back to grand-mean-centered only on convergence error.
+    sub$band_c <- sub[[band]]
 
     cat(sprintf("\n  MODEL: Power %s %s x StimCond\n", region_set_name, band_label))
 
     m <- tryCatch({
       glmer(Accuracy ~ StimCond + Region + band_c + band_c:StimCond + band_c:Region + (1 | Patient),
             data = sub, family = binomial, control = ctrl)
-    }, error = function(e) { cat("    FAILED:", conditionMessage(e), "\n"); NULL })
+    }, error = function(e) NULL)
+    if (is.null(m)) {
+      cat("    Convergence fallback: grand-mean-centered band\n")
+      sub$band_c <- sub[[band]] - mean(sub[[band]], na.rm=TRUE)
+      m <- tryCatch({
+        glmer(Accuracy ~ StimCond + Region + band_c + band_c:StimCond + band_c:Region + (1 | Patient),
+              data = sub, family = binomial, control = ctrl)
+      }, error = function(e) { cat("    FAILED:", conditionMessage(e), "\n"); NULL })
+    }
 
     if (!is.null(m)) {
       td <- save_coefs(m, sprintf("power_%s_%s_coefs.csv", region_set_name, band))
@@ -146,14 +155,23 @@ for (region_set_name in c("MTL", "HPC_subfields")) {
 
   for (band in c("theta", "slow_gamma", "fast_gamma")) {
     band_label <- switch(band, theta="Theta", slow_gamma="Slow Gamma", fast_gamma="HFA")
-    sub$band_c <- sub[[band]] - mean(sub[[band]], na.rm=TRUE)
+    # Try raw band first; fall back to grand-mean-centered only on convergence error.
+    sub$band_c <- sub[[band]]
 
     cat(sprintf("\n  MODEL: Coherence %s %s x StimCond\n", region_set_name, band_label))
 
     m <- tryCatch({
       glmer(Accuracy ~ StimCond + Region + band_c + band_c:StimCond + band_c:Region + (1 | Patient),
             data = sub, family = binomial, control = ctrl)
-    }, error = function(e) { cat("    FAILED:", conditionMessage(e), "\n"); NULL })
+    }, error = function(e) NULL)
+    if (is.null(m)) {
+      cat("    Convergence fallback: grand-mean-centered band\n")
+      sub$band_c <- sub[[band]] - mean(sub[[band]], na.rm=TRUE)
+      m <- tryCatch({
+        glmer(Accuracy ~ StimCond + Region + band_c + band_c:StimCond + band_c:Region + (1 | Patient),
+              data = sub, family = binomial, control = ctrl)
+      }, error = function(e) { cat("    FAILED:", conditionMessage(e), "\n"); NULL })
+    }
 
     if (!is.null(m)) {
       td <- save_coefs(m, sprintf("coherence_%s_%s_coefs.csv", region_set_name, band))
