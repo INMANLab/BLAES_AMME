@@ -49,7 +49,6 @@ NONBLA_PAIRS = [
     "EC_HPC", "EC_PRC",
     "HPC_PRC",
 ]
-NONBLA_PAIRS_LIST = ", ".join(p.replace("_", "-") for p in NONBLA_PAIRS)
 
 BAND_LABELS = {
     "theta": "Theta (4-8 Hz)",
@@ -60,8 +59,9 @@ PAC_TYPES = {
     "hfa": "HFA PAC (70-100 Hz)",
 }
 
+# ALLHPC = macro hippocampus -> "HPC"; HPC region = subiculum -> "SUB"
 REGION_LABELS = {
-    "BLA": "BLA", "HPC": "HPC", "CA": "CA", "DG": "DG",
+    "BLA": "BLA", "ALLHPC": "HPC", "HPC": "SUB", "CA": "CA", "DG": "DG",
     "EC": "EC", "PRC": "PRC", "PHG": "PHG",
 }
 
@@ -69,6 +69,9 @@ REGION_LABELS = {
 def display_region(r):
     parts = r.split("_")
     return "-".join(REGION_LABELS.get(p, p) for p in parts)
+
+
+NONBLA_PAIRS_LIST = ", ".join(display_region(p) for p in NONBLA_PAIRS)
 
 
 # ── PDF class ───────────────────────────────────────────────────────────────

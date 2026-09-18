@@ -34,6 +34,19 @@ COND_COLOR = {"nostim": "#1f77b4", "stim": "#d62728"}
 COND_LABEL = {"nostim": "No stim", "stim": "Stim"}
 
 
+def pretty_label(name):
+    # ALLHPC = macro hippocampus -> "HPC"; HPC region = subiculum -> "SUB"
+    parts = []
+    for p in str(name).split("_"):
+        if p == "ALLHPC":
+            parts.append("HPC")
+        elif p == "HPC":
+            parts.append("SUB")
+        else:
+            parts.append(p)
+    return "-".join(parts)
+
+
 # (pair, p_raw, q_FDR, mark_star) per scope. Pulled from
 # fdr_pac_<SCOPE>_GLMM_retrieval/*_band_c_x_StimCondstim.csv
 SCOPES = {
@@ -69,7 +82,7 @@ SCOPES = {
         out_name="HippSubBLA_pac_slow_gamma_interactions_3x1.png",
         nrows=1, ncols=3, figsize=(18, 6.2),
         family_caption=("No pair survives FDR within the HippSubBLA PAC slow "
-                        "gamma family; closest is BLA-HPC (q = 0.352)."),
+                        "gamma family; closest is BLA-SUB (q = 0.352)."),
         panels=[
             ("BLA_CA",  0.850, 0.850, False),
             ("BLA_DG",  0.394, 0.591, False),
@@ -134,7 +147,7 @@ def draw_panel(ax, glmm_dir, pair, p_raw, q_fdr, mark_star):
 
     n_trials = len(df)
     n_subjects = int(df["Patient"].nunique())
-    pair_pretty = pair.replace("_", "-")
+    pair_pretty = pretty_label(pair)
 
     for cond in ["nostim", "stim"]:
         sub = pred[pred["stim"] == cond]

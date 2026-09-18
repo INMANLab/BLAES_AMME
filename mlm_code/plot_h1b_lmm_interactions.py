@@ -25,7 +25,7 @@ CONT_PANELS = [
     ("coherence", "BLA_EC", "slow_gamma", "BLA-EC slow gamma coherence",  0.016, "*"),
     ("coherence", "BLA_CA", "slow_gamma", "BLA-CA slow gamma coherence",  0.030, "*"),
     ("coherence", "BLA_CA", "theta",      "BLA-CA theta coherence",        0.030, "*"),
-    ("coherence", "EC_HPC", "theta",      "EC-HPC theta coherence",        0.040, "*"),
+    ("coherence", "EC_HPC", "theta",      "EC-SUB theta coherence",        0.040, "*"),
     ("coherence", "CA_PRC", "theta",      "CA-PRC theta coherence",        0.054, "+"),
 ]
 
@@ -35,7 +35,7 @@ CAT_PANELS = [
         ["AntiResp", "Moderate", "Strong"]),
     ("coherence", "BLA_EC",  "slow_gamma", "BLA-EC slow gamma coherence",
         ["AntiResp"]),
-    ("coherence", "HPC_PRC", "slow_gamma", "HPC-PRC slow gamma coherence",
+    ("coherence", "HPC_PRC", "slow_gamma", "SUB-PRC slow gamma coherence",
         ["AntiResp"]),
     ("coherence", "BLA_CA",  "theta",      "BLA-CA theta coherence",
         ["AntiResp"]),

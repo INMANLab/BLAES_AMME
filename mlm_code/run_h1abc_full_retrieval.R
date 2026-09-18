@@ -87,12 +87,13 @@ SCOPES <- list(
     needs_allhpc  = FALSE
   ),
   HippSubRhinal = list(
-    # EC_PRC is owned by the HPCrhinal scope; excluded here to avoid
-    # double-testing the same pair in two FDR families.
-    power_regions = c("CA", "DG", "HPC", "EC", "PRC"),
+    # EC and PRC power belong to HPCrhinal only; including them here would
+    # double-count in FDR families. EC_PRC pairs (coh/pac) likewise belong
+    # to HPCrhinal. ALLHPC is never used in this scope (subregions only).
+    power_regions = c("CA", "DG", "HPC"),
     coh_pairs     = c("CA_EC", "DG_EC", "EC_HPC", "CA_PRC", "DG_PRC", "HPC_PRC"),
     pac_pairs     = c("CA_EC", "DG_EC", "EC_HPC", "CA_PRC", "DG_PRC", "HPC_PRC"),
-    glmm_ref_power = "EC", glmm_ref_pair = "EC_HPC",
+    glmm_ref_power = "HPC", glmm_ref_pair = "EC_HPC",
     needs_allhpc  = FALSE
   )
 )

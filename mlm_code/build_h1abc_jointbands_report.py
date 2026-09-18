@@ -55,8 +55,8 @@ OUT_DIR = os.path.join(REPO_ROOT, "OUTPUTS", PHASE_FOLDER, "testing")
 os.makedirs(OUT_DIR, exist_ok=True)
 
 SCOPE_LABELS = {
-    "BLAMTL":        "BLA-MTL (uses ALLHPC)",
-    "HPCrhinal":     "HPC-rhinal (uses ALLHPC)",
+    "BLAMTL":        "BLA-MTL (uses HPC)",
+    "HPCrhinal":     "HPC-rhinal (uses HPC)",
     "HippSubBLA":    "Hippocampal subregions vs BLA",
     "HippSubRhinal": "Hippocampal subregions vs rhinal cortices",
 }
@@ -98,7 +98,16 @@ SG_INT_TERM = "slow_gamma_c:StimCondstim"
 # ---------------------------------------------------------------------------
 
 def display_unit(u):
-    return u.replace("_", "-")
+    # ALLHPC = macro hippocampus -> "HPC"; HPC region = subiculum -> "SUB"
+    parts = []
+    for p in str(u).split("_"):
+        if p == "ALLHPC":
+            parts.append("HPC")
+        elif p == "HPC":
+            parts.append("SUB")
+        else:
+            parts.append(p)
+    return "-".join(parts)
 
 
 def num_str(v, decimals=4):

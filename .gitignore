@@ -12,3 +12,4 @@ to_combine/
 __pycache__/
 .numba_cache/
 .mplconfig/
+.Rhistory

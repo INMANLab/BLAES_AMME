@@ -37,7 +37,7 @@ SCOPES <- list(
   HPCrhinal     = list(pairs = c("ALLHPC_EC", "ALLHPC_PRC", "EC_PRC"),
                        out   = file.path(STATS_BASE, "coherence_HPCrhinal_GLMM")),
   HippSubRhinal = list(pairs = c("CA_EC", "DG_EC", "EC_HPC", "CA_PRC",
-                                  "DG_PRC", "HPC_PRC", "EC_PRC"),
+                                  "DG_PRC", "HPC_PRC"),
                        out   = file.path(STATS_BASE, "coherence_HippSubRhinal_GLMM"))
 )
 

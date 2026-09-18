@@ -17,6 +17,7 @@ for _p in (_root, _root / 'encoding', _root / 'retrieval', _root / 'endogenous_m
 # --- end bootstrap ---
 
 from pathlib import Path
+import re
 import shutil
 import sys
 import textwrap
@@ -26,6 +27,20 @@ import numpy as np
 import pandas as pd
 from matplotlib.backends.backend_pdf import PdfPages
 from scipy.stats import ttest_rel
+
+_ALLHPC_RE = re.compile(r"(?<![A-Za-z])ALLHPC(?![A-Za-z])")
+_HPC_RE = re.compile(r"(?<![A-Za-z])HPC(?![A-Za-z])")
+_MARKER = "\x00__MACRO_HPC__\x00"
+
+
+def pretty_in_text(text):
+    if text is None:
+        return text
+    s = str(text)
+    s = _ALLHPC_RE.sub(_MARKER, s)
+    s = _HPC_RE.sub("SUB", s)
+    s = s.replace(_MARKER, "HPC")
+    return s
 
 from combined_retrieval_coherence import (
     augment_with_allhpc_pair_composites,
@@ -247,7 +262,7 @@ def make_summary_page(summary_df):
     else:
         for _, row in sig_df.sort_values(["p", "Memory", "Region", "Band"]).iterrows():
             lines.append(
-                f"{row['Memory']} | {row['Region']} | {row['Band']}: "
+                f"{row['Memory']} | {pretty_in_text(row['Region'])} | {row['Band']}: "
                 f"t = {fmt_num(row['t'])}, p = {p_str(row['p'])} ({row['Sig']})."
             )
 
@@ -276,6 +291,7 @@ def make_table_page(title, df):
     ax.text(0, 1.02, title, fontsize=15, fontweight="bold", va="bottom")
 
     display_df = df[["Region", "N", "Mean difference (stim - no stim)", "t", "p", "Sig"]].copy()
+    display_df["Region"] = display_df["Region"].map(pretty_in_text)
     display_df["Mean difference (stim - no stim)"] = display_df["Mean difference (stim - no stim)"].map(fmt_num)
     display_df["t"] = display_df["t"].map(fmt_num)
     display_df["p"] = display_df["p"].map(p_str)

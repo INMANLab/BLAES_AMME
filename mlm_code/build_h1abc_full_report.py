@@ -65,15 +65,15 @@ FAMILY_DIR = os.path.join(OUT_DIR, "stats",
 os.makedirs(FAMILY_DIR, exist_ok=True)
 
 SCOPE_LABELS = {
-    "BLAMTL":        "BLA-MTL (uses ALLHPC)",
-    "HPCrhinal":     "HPC-rhinal (uses ALLHPC)",
+    "BLAMTL":        "BLA-MTL (uses HPC)",
+    "HPCrhinal":     "HPC-rhinal (uses HPC)",
     "HippSubBLA":    "Hippocampal subregions vs BLA",
     "HippSubRhinal": "Hippocampal subregions vs rhinal cortices",
 }
 MODEL_LABELS = {
     "LMMcont": "LMM, memory modulation continuous (mem_mod_z)",
     "LMMquad": "LMM, quad responder group",
-    "GLMM":    "GLMM, Accuracy ~ band_c + StimCond + Region + Region:StimCond",
+    "GLMM":    "GLMM, Accuracy ~ band + StimCond + band:StimCond",
 }
 PHASE_LABEL = "Retrieval" if PHASE == "retrieval" else "Encoding"
 
@@ -95,9 +95,9 @@ SCOPES = {
         pac_pairs=["BLA_CA", "BLA_DG", "BLA_HPC"],
     ),
     "HippSubRhinal": dict(
-        # EC_PRC is owned by the HPCrhinal scope; excluded here to avoid
-        # double-testing the same pair in two FDR families.
-        power_regions=["CA", "DG", "HPC", "EC", "PRC"],
+        # EC, PRC power and EC_PRC pairs belong to HPCrhinal only.
+        # ALLHPC pairs never appear here (subregions only).
+        power_regions=["CA", "DG", "HPC"],
         coh_pairs=["CA_EC", "DG_EC", "EC_HPC", "CA_PRC", "DG_PRC", "HPC_PRC"],
         pac_pairs=["CA_EC", "DG_EC", "EC_HPC", "CA_PRC", "DG_PRC", "HPC_PRC"],
     ),
@@ -131,7 +131,16 @@ OUTPUT_PDF = os.path.join(OUT_DIR, PDF_NAME)
 # ---------------------------------------------------------------------------
 
 def display_unit(u):
-    return u.replace("_", "-")
+    # ALLHPC = macro hippocampus -> "HPC"; HPC region = subiculum -> "SUB"
+    parts = []
+    for p in str(u).split("_"):
+        if p == "ALLHPC":
+            parts.append("HPC")
+        elif p == "HPC":
+            parts.append("SUB")
+        else:
+            parts.append(p)
+    return "-".join(parts)
 
 
 def num_str(v, decimals=4):
@@ -178,15 +187,48 @@ def fmt_fit(v, decimals=2):
     return f"{float(v):.{decimals}f}"
 
 
-def pretty_term(term):
+# Per-panel centering log keyed by (modality, unit, band). Panels that hit a
+# convergence fallback to grand-mean centering keep the "_c" suffix in their
+# tables; non-centered panels render as plain "band".
+def _load_centering_log():
+    log_p = os.path.join(REPO_ROOT, "OUTPUTS", PHASE_FOLDER,
+                         "stats", f"h1abc_full_{PHASE}_mlm",
+                         "_glmm_centering_log.csv")
+    if not os.path.exists(log_p):
+        return {}
+    try:
+        df = pd.read_csv(log_p)
+    except Exception:
+        return {}
+    out = {}
+    for _, r in df.iterrows():
+        out[(str(r["modality"]), str(r["unit"]), str(r["band"]))] = bool(r["centered"])
+    return out
+
+
+_CENTERING_LOG = _load_centering_log()
+
+
+def panel_was_centered(unit, band):
+    return bool(_CENTERING_LOG.get((MEASURE, str(unit), str(band)), False))
+
+
+def band_label(centered):
+    return "band_c" if centered else "band"
+
+
+def pretty_term(term, centered=False):
+    bl = band_label(centered)
     if term == "(Intercept)":
         return "(Intercept)"
     if term == "mem_mod_z":
         return "Memory Modulation Z"
     if term == "band_c":
-        return "band"
+        return bl
     if term == "StimCondstim":
         return "StimCond (stim vs nostim)"
+    if term in ("band_c:StimCondstim", "StimCondstim:band_c"):
+        return f"{bl}:StimCond (stim vs nostim)"
     if term.startswith("QuadResponderGroup"):
         return "Responder Status: " + term.replace("QuadResponderGroup", "")
     if term.startswith("Region") and ":" not in term:
@@ -198,6 +240,16 @@ def pretty_term(term):
         return ("StimCond x Region: "
                 + term.replace(":StimCondstim", "").replace("Region", ""))
     return term
+
+
+def relabel_formula(formula_str, centered):
+    """Rewrite band_c -> band in a formula string for display, unless this
+    panel was centered (in which case keep the _c marker)."""
+    if centered:
+        return formula_str
+    if not isinstance(formula_str, str):
+        return formula_str
+    return formula_str.replace("band_c", "band")
 
 
 # ---------------------------------------------------------------------------
@@ -411,13 +463,14 @@ def model_overview_text():
                 "(AntiResp, Moderate, Strong vs NonResp) each FDR-BH corrected "
                 "as their own family within each band - 3 sub-families per "
                 "band, one per contrast.")
-    return ("Per region/pair, fit:  Accuracy ~ band_c + StimCond + "
-            "band_c:StimCond + (1 | Patient). band_c is the raw band value; "
-            "if the model fails to converge it is grand-mean-centered as a "
-            "numerical-stability fallback (see _glmm_centering_log.csv). "
-            "Estimates are odds ratios. FDR-BH is applied to the "
-            "band_c:StimCond interaction p-value across panels within each "
-            "band.")
+    return ("Per region/pair, fit:  Accuracy ~ band + StimCond + "
+            "band:StimCond + (1 | Patient). 'band' is the raw band value; "
+            "if a panel failed to converge it was grand-mean-centered as a "
+            "numerical-stability fallback, in which case its table shows "
+            "'band_c' with a header note (see _glmm_centering_log.csv for "
+            "the full list). Estimates are odds ratios. FDR-BH is applied "
+            "to the band:StimCond interaction p-value across panels within "
+            "each band.")
 
 
 def is_focal_term(term):
@@ -433,7 +486,9 @@ def render_panel(pdf, u, band, families_band):
         )
         return
 
-    pdf.subsection_title(display_unit(u))
+    centered = panel_was_centered(u, band)
+    title_suffix = "  [band grand-mean-centered]" if centered else ""
+    pdf.subsection_title(display_unit(u) + title_suffix)
 
     is_glmm = MODELTYPE == "GLMM"
     headers = ["Predictor",
@@ -453,7 +508,7 @@ def render_panel(pdf, u, band, families_band):
             if tup is not None:
                 q = tup[1]
         coef_rows.append([
-            pretty_term(term),
+            pretty_term(term, centered=centered),
             num_str(r["estimate"]),
             ci_str(r["conf.low"], r["conf.high"]),
             f"{r['statistic']:.3f}" if pd.notna(r.get("statistic")) else "",
@@ -473,9 +528,12 @@ def render_panel(pdf, u, band, families_band):
     for _, r in anova.iterrows():
         anova_rows.append([
             str(r["Model"]),
-            (str(r["Formula"])
-                .replace("QuadResponderGroup", "Responder Status")
-                .replace("mem_mod_z", "Memory Modulation Z")),
+            relabel_formula(
+                (str(r["Formula"])
+                    .replace("QuadResponderGroup", "Responder Status")
+                    .replace("mem_mod_z", "Memory Modulation Z")),
+                centered=centered,
+            ),
             f"{int(r['npar'])}" if pd.notna(r["npar"]) else "-",
             fmt_fit(r["AIC"], 1),
             fmt_fit(r["BIC"], 1),
@@ -493,6 +551,75 @@ def render_panel(pdf, u, band, families_band):
         col_widths=[12, 100, 10, 14, 14, 14, 14, 8, 14, 6],
         note="Sequential LR test vs previous row.",
     )
+
+
+def panel_figure_paths():
+    """List of (caption, png_path) to embed before the tables.
+
+    - LMMcont/LMMquad power/coherence: combined-bands grid (theta + slow gamma).
+    - LMMcont/LMMquad PAC: single-band slow_gamma grid.
+    - GLMM power/coherence: per-band interaction figures (theta + slow gamma).
+    - GLMM PAC: slow_gamma interaction figure.
+    Missing files are silently skipped (e.g. panels with <4 patients).
+    """
+    fig_root = os.path.join(OUT_DIR, "figures")
+    items = []
+    if MODELTYPE in ("LMMcont", "LMMquad"):
+        scope_dir = os.path.join(fig_root, f"{SCOPE}_{MEASURE}_{MODELTYPE}")
+        if MEASURE in ("power", "coherence"):
+            p = os.path.join(
+                scope_dir,
+                f"{SCOPE}_{MEASURE}_{MODELTYPE}_combined_bands.png",
+            )
+            if os.path.exists(p):
+                items.append(("Panel grid (theta | slow gamma)", p))
+        elif MEASURE == "pac":
+            p = os.path.join(
+                scope_dir,
+                f"{SCOPE}_{MEASURE}_{MODELTYPE}_slow_gamma.png",
+            )
+            if os.path.exists(p):
+                items.append(("Panel grid (slow gamma)", p))
+    elif MODELTYPE == "GLMM":
+        scope_dir = os.path.join(fig_root,
+                                 f"{SCOPE}_{MEASURE}_GLMM_interactions")
+        if MEASURE == "pac":
+            bands = [("slow_gamma", "Slow gamma interactions")]
+        else:
+            bands = [("theta",      "Theta interactions"),
+                     ("slow_gamma", "Slow gamma interactions")]
+        for band, caption in bands:
+            p = os.path.join(
+                scope_dir,
+                f"{SCOPE}_{MEASURE}_{band}_interactions.png",
+            )
+            if os.path.exists(p):
+                items.append((caption, p))
+    return items
+
+
+def embed_panel_figures(pdf):
+    items = panel_figure_paths()
+    if not items:
+        return False
+    if MODELTYPE in ("LMMcont", "LMMquad"):
+        body = ("Per-unit panels of band-averaged "
+                f"{MEASURE} vs the model predictor. "
+                "Red box = FDR-significant (q < 0.05).")
+    else:
+        body = (f"GLMM-predicted P(remembered) by {MEASURE} band value, "
+                "split by stim condition. Significance markers from the "
+                "per-panel Region:StimCond contrasts.")
+    page_w = pdf.w - pdf.l_margin - pdf.r_margin
+    for i, (caption, fig_path) in enumerate(items):
+        pdf.add_page()
+        pdf.section_title(f"2{chr(ord('a') + i) if len(items) > 1 else ''}. "
+                          f"{caption}")
+        if i == 0:
+            pdf.body_text(body)
+        pdf.image(fig_path, x=pdf.l_margin, w=page_w)
+        pdf.ln(4)
+    return True
 
 
 def render_report():
@@ -517,9 +644,11 @@ def render_report():
         "with < 4 unique patients are dropped (do not enter FDR)."
     )
 
+    has_fig = embed_panel_figures(pdf)
+
     families = compute_families()
 
-    sec = 2
+    sec = 3 if has_fig else 2
     for band in BANDS:
         pdf.section_title(f"{sec}. {BAND_LABELS[band]}")
         sec += 1

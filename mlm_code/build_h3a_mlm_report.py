@@ -13,7 +13,8 @@ import pandas as pd
 from fpdf import FPDF
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-OUTPUT_DIR = os.path.join(SCRIPT_DIR, 'outputs', 'ied_timing_memory')
+REPO_ROOT = os.path.dirname(SCRIPT_DIR)
+OUTPUT_DIR = os.path.join(REPO_ROOT, 'IED', 'ied_timing_memory')
 
 
 class APAReport(FPDF):
@@ -143,6 +144,19 @@ def sig_str(p):
     elif p < .05:
         return '*'
     return ''
+
+
+def bh_fdr(pvals):
+    """Benjamini-Hochberg FDR. Returns q-values in the original order."""
+    p = np.asarray(pvals, dtype=float)
+    n = len(p)
+    order = np.argsort(p)
+    ranked = p[order] * n / np.arange(1, n + 1)
+    ranked = np.minimum.accumulate(ranked[::-1])[::-1]
+    ranked = np.clip(ranked, 0, 1)
+    q = np.empty(n)
+    q[order] = ranked
+    return q
 
 
 def main():
@@ -383,42 +397,44 @@ def main():
         'assess their independent contributions.'
     )
 
-    # Table
+    # Table. FDR family = the four IED timing-window predictors (intercept excluded).
+    window_labels = {
+        'ied_before_image': 'Before Image IED',
+        'ied_during_image': 'During Image IED',
+        'ied_after_image': 'After Image IED',
+        'ied_during_stim': 'During Stim IED',
+    }
+    m1a_fam = m1a[m1a['term'].isin(window_labels)].copy()
+    m1a_q = dict(zip(m1a_fam['term'], bh_fdr(m1a_fam['p.value'].values)))
+
     rows_1a = []
     for _, r in m1a.iterrows():
         term = r['term']
-        if term == '(Intercept)':
-            label = '(Intercept)'
-        elif term == 'ied_before_image':
-            label = 'Before Image IED'
-        elif term == 'ied_during_image':
-            label = 'During Image IED'
-        elif term == 'ied_after_image':
-            label = 'After Image IED'
-        elif term == 'ied_during_stim':
-            label = 'During Stim IED'
-        else:
-            label = term
+        label = '(Intercept)' if term == '(Intercept)' else window_labels.get(term, term)
 
         p = r['p.value']
+        q = m1a_q.get(term)
+        q_cell = f'{p_str(q)}{sig_str(q)}' if q is not None else '--'
         rows_1a.append([
             label,
             f'{r["estimate"]:.3f}',
-            f'{r["std.error"]:.3f}',
             f'[{r["conf.low"]:.3f}, {r["conf.high"]:.3f}]',
             f'{r["statistic"]:.2f}',
-            f'{p_str(p)}{sig_str(p)}',
+            f'{p_str(p)}',
+            q_cell,
         ])
 
     pdf.apa_table(
         'Table 1\nModel 1a: Encoding IED Timing Windows Predicting Subsequent Memory (Odds Ratios)',
-        ['Predictor', 'OR', 'SE(B)', '95% CI', 'z', 'p'],
+        ['Predictor', 'OR', '95% CI', 'z', 'p', 'FDR q'],
         rows_1a,
-        col_widths=[32, 16, 14, 32, 14, 22],
+        col_widths=[48, 16, 32, 14, 16, 18],
         note=f'GLMM with logit link and random intercept for patient (N = {n_trials} trials, '
              f'{n_patients} patients). OR = odds ratio; values < 1 indicate lower odds of '
-             f'remembering when IED is present. SE(B) = standard error of the log-odds '
-             f'coefficient. z = Wald z-statistic. *p < .05. **p < .01. ***p < .001.'
+             f'remembering when IED is present. z = Wald z-statistic. FDR q = Benjamini-Hochberg '
+             f'FDR-corrected p-value across the four timing-window predictors. The intercept is '
+             f'not part of the FDR family (--). Stars denote FDR significance: *q < .05. '
+             f'**q < .01. ***q < .001.'
     )
 
     # Extract key values for text
@@ -487,51 +503,54 @@ def main():
         'trials.'
     )
 
-    # Extract interaction terms
+    # Extract interaction terms. FDR family = the three estimable IED-window x stim
+    # interactions. The During Stim x Stim interaction is not estimable (near-complete
+    # separation) and the Stimulation main effect is not an interaction, so both are
+    # excluded from the FDR family.
+    interaction_labels = {
+        'ied_before_image:stim': 'Before Image x Stim',
+        'ied_during_image:stim': 'During Image x Stim',
+        'ied_after_image:stim': 'After Image x Stim',
+    }
+    m1b_fam = m1b[m1b['term'].isin(interaction_labels)].copy()
+    m1b_q = dict(zip(m1b_fam['term'], bh_fdr(m1b_fam['p.value'].values)))
+
     rows_1b_interact = []
     for _, r in m1b.iterrows():
         term = r['term']
         if ':' not in term and term != 'stim':
             continue
-        label = term.replace('ied_', '').replace('_', ' ').replace(':', ' x ')
+        # Drop the non-estimable During Stim x Stim interaction (near-complete separation).
+        if term == 'ied_during_stim:stim':
+            continue
         if term == 'stim':
             label = 'Stimulation'
-        p = r['p.value']
-        or_val = r['estimate']
-        ci_lo = r['conf.low']
-        ci_hi = r['conf.high']
-        se_val = r['std.error']
-        z_val = r['statistic']
-        # Cap extreme values from near-separation (e.g. during_stim:stim)
-        if or_val > 1e6 or or_val < 1e-6:
-            or_s = 'n.e.'
-            se_s = 'n.e.'
-            ci_s = 'n.e.'
-            z_s = 'n.e.'
         else:
-            or_s = f'{or_val:.3f}'
-            se_s = f'{se_val:.3f}'
-            ci_s = f'[{ci_lo:.3f}, {ci_hi:.3f}]'
-            z_s = f'{z_val:.2f}'
+            label = interaction_labels.get(term, term.replace('ied_', '').replace('_', ' ').replace(':', ' x '))
+        p = r['p.value']
+        q = m1b_q.get(term)
+        q_cell = f'{p_str(q)}{sig_str(q)}' if q is not None else '--'
         rows_1b_interact.append([
             label,
-            or_s,
-            se_s,
-            ci_s,
-            z_s,
-            f'{p_str(p)}{sig_str(p)}',
+            f'{r["estimate"]:.3f}',
+            f'[{r["conf.low"]:.3f}, {r["conf.high"]:.3f}]',
+            f'{r["statistic"]:.2f}',
+            f'{p_str(p)}',
+            q_cell,
         ])
 
     pdf.apa_table(
         'Table 2\nModel 1b: Stimulation Main Effect and IED x Stim Interactions (Odds Ratios)',
-        ['Predictor', 'OR', 'SE(B)', '95% CI', 'z', 'p'],
+        ['Predictor', 'OR', '95% CI', 'z', 'p', 'FDR q'],
         rows_1b_interact,
-        col_widths=[38, 14, 14, 32, 14, 22],
-        note='Only stimulation main effect and interaction terms shown. '
-             'n.e. = not estimable (near-complete separation: During Stim IEDs occur almost '
-             'exclusively on stim trials, making the interaction unidentifiable). '
-             'SE(B) = standard error of the log-odds coefficient. z = Wald z-statistic. '
-             'None of the IED x Stim interactions were significant.'
+        col_widths=[48, 16, 32, 14, 16, 18],
+        note='Stimulation main effect and the estimable IED x Stim interactions shown. '
+             'FDR q = Benjamini-Hochberg FDR-corrected p-value across the three IED-window x Stim '
+             'interactions; the Stimulation main effect is not part of that family (--). The '
+             'During Stim x Stim interaction was not estimable (near-complete separation: During '
+             'Stim IEDs occur almost exclusively on stim trials) and is omitted. z = Wald '
+             'z-statistic. No IED x Stim interaction was significant before or after FDR '
+             'correction. *q < .05. **q < .01. ***q < .001.'
     )
 
     pdf.body_text(

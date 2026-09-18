@@ -36,11 +36,13 @@ from scipy.stats import chi2_contingency, spearmanr, fisher_exact
 warnings.filterwarnings('ignore')
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-ENCODING_CSV = os.path.join(SCRIPT_DIR, 'IED',
+REPO_ROOT = os.path.dirname(SCRIPT_DIR)
+IED_DIR = os.path.join(REPO_ROOT, 'IED')
+ENCODING_CSV = os.path.join(IED_DIR,
                             'AMMEBLAES_IEDs_trial_level_dissertation_study_usethis_cleaned_with_memory.csv')
-RETRIEVAL_CSV = os.path.join(SCRIPT_DIR, 'IED',
+RETRIEVAL_CSV = os.path.join(IED_DIR,
                              'AMMEBLAES_IEDs_trial_level_dissertation_test_usethis_cleaned_with_memory.csv')
-OUTPUT_DIR = os.path.join(SCRIPT_DIR, 'outputs', 'ied_timing_memory')
+OUTPUT_DIR = os.path.join(IED_DIR, 'ied_timing_memory')
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # ---------------------------------------------------------------------------
@@ -119,6 +121,31 @@ def _sig_star(p):
     return ''
 
 
+def bh_fdr(pvals):
+    """Benjamini-Hochberg adjusted q-values for a vector of p-values.
+
+    Returns q-values aligned to the input; NaNs pass through (e.g. the
+    reference bar, which is not tested). Matches the implementation in
+    run_all_analyses.py (_bh_fdr).
+    """
+    p = np.asarray(pvals, dtype=float)
+    n = int(np.sum(~np.isnan(p)))
+    if n == 0:
+        return np.full_like(p, np.nan)
+    order = np.argsort(np.where(np.isnan(p), 1.0, p))
+    ranks = np.empty(len(p), dtype=int)
+    ranks[order] = np.arange(1, len(p) + 1)
+    q_raw = p * n / ranks
+    q = np.full_like(p, np.nan)
+    sorted_q = q_raw[order]
+    for i in range(len(sorted_q) - 2, -1, -1):
+        if not np.isnan(sorted_q[i]) and not np.isnan(sorted_q[i + 1]):
+            sorted_q[i] = min(sorted_q[i], sorted_q[i + 1])
+    sorted_q = np.minimum(sorted_q, 1.0)
+    q[order] = sorted_q
+    return q
+
+
 def _fisher_vs_ref(rem_ref, forg_ref, rem_x, forg_x):
     """Two-sided Fisher's exact test on the 2x2 table
         [[rem_ref, forg_ref],
@@ -131,11 +158,38 @@ def _fisher_vs_ref(rem_ref, forg_ref, rem_x, forg_x):
     return p
 
 
-def plot_dose_response(trial_level, phase_label, filename):
-    """% remembered as a function of number of timing windows with IED."""
-    fig, ax = plt.subplots(figsize=(9, 7))
+def glmm_dose_q(coefs_csv, phase):
+    """Return {n_windows: q} for the k-vs-1-window contrasts from the GLMM
+    (mixed model with patient random intercept) coefficient CSV, BH-FDR
+    corrected within phase. Encoding uses the factor model
+    (factor(n_windows)2/3/4); retrieval uses the continuous n_windows slope as
+    the single 1-vs-2-window contrast. Returns {} if the CSV is unavailable."""
+    if not os.path.exists(coefs_csv):
+        print(f'  WARNING: GLMM coefs not found ({coefs_csv}); no stars drawn')
+        return {}
+    df = pd.read_csv(coefs_csv)
+    term = df['term'].astype(str)
+    if phase == 'encoding':
+        sub = df[term.str.startswith('factor(n_windows)')].copy()
+        if sub.empty:
+            return {}
+        sub['nw'] = sub['term'].astype(str).str.extract(r'(\d+)').astype(int)
+        sub = sub.sort_values('nw')
+        qs = bh_fdr(sub['p.value'].values)
+        return {int(nw): float(q) for nw, q in zip(sub['nw'], qs)}
+    row = df[term == 'n_windows']
+    return {2: float(row.iloc[0]['p.value'])} if not row.empty else {}
 
-    window_counts = sorted(trial_level['n_windows'].unique())
+
+def plot_dose_response(trial_level, qmap, phase_label, filename):
+    """% remembered as a function of number of timing windows with IED.
+    Significance stars come from the GLMM k-vs-1-window contrasts (`qmap`)."""
+    fig, ax = plt.subplots(figsize=(6, 7))
+
+    # Restrict to trials with >= 1 timing window so the reference bar is
+    # "1 window" (drop the degenerate 0-window group, e.g. retrieval n=1).
+    window_counts = [nw for nw in sorted(trial_level['n_windows'].unique())
+                     if nw >= 1]
     pcts, ns, rems, forgs = [], [], [], []
 
     for nw in window_counts:
@@ -153,20 +207,14 @@ def plot_dose_response(trial_level, phase_label, filename):
     bars = ax.bar(window_counts, pcts, color=colors,
                   edgecolor='black', linewidth=1, width=0.6)
 
-    # Per-bar Fisher's exact vs. the leftmost (reference) bar.
-    # The reference bar gets a '(ref)' annotation; subsequent bars get the
-    # significance star (or 'n.s.') from the 2x2 test against the reference.
-    ref_rem, ref_forg = rems[0], forgs[0]
-    p_per_bar = [np.nan]  # reference vs. itself
-    for i in range(1, len(window_counts)):
-        p_per_bar.append(_fisher_vs_ref(ref_rem, ref_forg,
-                                        rems[i], forgs[i]))
-
+    # Significance vs. the 1-window reference comes from the GLMM contrasts
+    # (patient random intercept), BH-FDR corrected within phase.
     for i, (bar, pct, n) in enumerate(zip(bars, pcts, ns)):
+        nw = window_counts[i]
         if i == 0:
             sig_label = '(ref)'
         else:
-            star = _sig_star(p_per_bar[i])
+            star = _sig_star(qmap.get(nw, np.nan))
             sig_label = star if star else 'n.s.'
         ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 1.5,
                 f'{pct:.1f}%\n(n={n})\n{sig_label}',
@@ -174,14 +222,19 @@ def plot_dose_response(trial_level, phase_label, filename):
                 color=(SIG_COLOR if (sig_label not in ('(ref)', 'n.s.', ''))
                        else 'black'))
 
-    ax.set_xlabel('Number of Timing Windows with IED', fontsize=15)
-    ax.set_ylabel('% Trials Remembered', fontsize=15)
-    ax.set_title(f'{phase_label}: IED Timing vs Memory',
+    ax.set_xlabel('Number of Timing Windows with IED', fontsize=17,
+                  fontweight='bold')
+    ax.set_ylabel('% Trials Remembered', fontsize=17, fontweight='bold')
+    ax.set_title(phase_label.replace(' Phase', ''),
                  fontsize=17, fontweight='bold')
     ax.set_xticks(window_counts)
     ax.set_ylim(0, 100)
     sns.despine(ax=ax)
     ax.tick_params(axis='both', labelsize=12)
+    ax.text(0.0, -0.13,
+            'Stars vs. 1-window reference: GLMM (patient random effect), '
+            'Benjamini-Hochberg FDR q-values (corrected within this phase).',
+            transform=ax.transAxes, fontsize=8, color='#555555')
     fig.tight_layout()
 
     out = os.path.join(OUTPUT_DIR, filename)
@@ -234,11 +287,15 @@ def plot_combinations(trial_level, phase_label, filename):
         forg_i = int(combo_df.loc[i, 'n'] - combo_df.loc[i, 'n_rem'])
         p_per_bar.append(_fisher_vs_ref(ref_rem, ref_forg, rem_i, forg_i))
 
+    # Benjamini-Hochberg FDR across the non-reference combination comparisons
+    # (this figure / phase is its own family).
+    q_per_bar = bh_fdr(p_per_bar)
+
     for i, (bar, row) in enumerate(zip(bars, combo_df.itertuples())):
         if i == 0:
             sig_label = '(ref)'
         else:
-            star = _sig_star(p_per_bar[i])
+            star = _sig_star(q_per_bar[i])
             sig_label = star if star else 'n.s.'
         ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 1,
                 f'{row.pct_rem:.0f}%\n(n={row.n})\n{sig_label}',
@@ -248,17 +305,81 @@ def plot_combinations(trial_level, phase_label, filename):
 
     ax.set_xticks(x)
     ax.set_xticklabels(combo_df['combo'], rotation=35, ha='right', fontsize=11)
-    ax.set_ylabel('% Trials Remembered', fontsize=15)
-    ax.set_title(f'{phase_label}: IED Timing Combinations vs Memory',
+    ax.set_ylabel('% Trials Remembered', fontsize=17, fontweight='bold')
+    ax.set_title(phase_label.replace(' Phase', ''),
                  fontsize=17, fontweight='bold')
     ax.set_ylim(0, 105)
     sns.despine(ax=ax)
     ax.tick_params(axis='y', labelsize=12)
+    ax.text(0.0, -0.22,
+            'Stars vs. reference bar: Fisher exact, Benjamini-Hochberg FDR '
+            'q-values (corrected within this phase).',
+            transform=ax.transAxes, fontsize=8, color='#555555')
 
     legend_elements = [Patch(facecolor=cmap[i], edgecolor='black',
                              label=f'{i} window{"s" if i > 1 else ""}')
                        for i in sorted(cmap.keys())]
-    ax.legend(handles=legend_elements, fontsize=11, frameon=True, loc='upper right')
+    ax.legend(handles=legend_elements, prop={'weight': 'bold', 'size': 13},
+              frameon=True, loc='upper right')
+
+    fig.tight_layout()
+
+    out = os.path.join(OUTPUT_DIR, filename)
+    fig.savefig(out, dpi=300, bbox_inches='tight')
+    plt.close(fig)
+    print(f'Saved {out}')
+
+
+def plot_window_count_combo(trial_level, qmap, phase_label, filename):
+    """Combinations-style figure showing % remembered for trials with IEDs in
+    1, 2, 3, ... and all timing windows. Reference = the 1-window group;
+    significance stars come from the GLMM k-vs-1-window contrasts (`qmap`),
+    BH-FDR corrected within this phase."""
+    counts = [nw for nw in sorted(trial_level['n_windows'].unique()) if nw >= 1]
+    if len(counts) < 2:
+        print(f'  Skipping {filename}: <2 window-count groups')
+        return
+
+    def _grp(sub, nw, label):
+        n = len(sub)
+        n_rem = int((sub['MemoryOutcome'] == 'remembered').sum())
+        return {'nw': nw, 'label': label, 'n': n, 'n_rem': n_rem,
+                'n_forg': n - n_rem, 'pct': n_rem / n * 100 if n else 0}
+
+    rows = [_grp(trial_level[trial_level['n_windows'] == nw], nw,
+                 f"{nw} window{'s' if nw > 1 else ''}") for nw in counts]
+
+    fig, ax = plt.subplots(figsize=(max(6, len(rows) * 1.5), 7))
+    x = np.arange(len(rows))
+    colors = [DOSE_COLORS[min(r['nw'] - 1, len(DOSE_COLORS) - 1)] for r in rows]
+    bars = ax.bar(x, [r['pct'] for r in rows], color=colors,
+                  edgecolor='black', linewidth=0.8, width=0.6)
+
+    # Significance vs. the 1-window reference from the GLMM contrasts.
+    for i, (bar, r) in enumerate(zip(bars, rows)):
+        if i == 0:
+            sig_label = '(ref)'
+        else:
+            star = _sig_star(qmap.get(r['nw'], np.nan))
+            sig_label = star if star else 'n.s.'
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 1,
+                f"{r['pct']:.0f}%\n(n={r['n']})\n{sig_label}",
+                ha='center', va='bottom', fontsize=10, fontweight='bold',
+                color=(SIG_COLOR if sig_label not in ('(ref)', 'n.s.', '')
+                       else 'black'))
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([r['label'] for r in rows], fontsize=12)
+    ax.set_ylabel('% Trials Remembered', fontsize=17, fontweight='bold')
+    ax.set_title(phase_label.replace(' Phase', ''),
+                 fontsize=17, fontweight='bold')
+    ax.set_ylim(0, 105)
+    sns.despine(ax=ax)
+    ax.tick_params(axis='y', labelsize=12)
+    ax.text(0.0, -0.13,
+            'Stars vs. 1-window reference: GLMM (patient random effect), '
+            'Benjamini-Hochberg FDR q-values (corrected within this phase).',
+            transform=ax.transAxes, fontsize=8, color='#555555')
 
     fig.tight_layout()
 
@@ -386,8 +507,12 @@ def main():
 
     save_stats(enc, 'encoding_multiwindow_stats.csv')
     print()
-    plot_dose_response(enc, 'Encoding Phase', 'encoding_multiwindow_dose_response.png')
+    enc_q = glmm_dose_q(os.path.join(OUTPUT_DIR, 'encoding_multiwindow_mlm_coefs.csv'),
+                        'encoding')
+    print(f'  GLMM dose q-values (vs 1 window): {enc_q}')
+    plot_dose_response(enc, enc_q, 'Encoding Phase', 'encoding_multiwindow_dose_response.png')
     plot_combinations(enc, 'Encoding Phase', 'encoding_multiwindow_combinations.png')
+    plot_window_count_combo(enc, enc_q, 'Encoding Phase', 'encoding_multiwindow_window_count.png')
     plot_by_subject(enc, 'Encoding Phase', 'encoding_multiwindow_by_subject.png')
 
     # --- Retrieval Phase ---
@@ -403,8 +528,12 @@ def main():
 
         save_stats(ret, 'retrieval_multiwindow_stats.csv')
         print()
-        plot_dose_response(ret, 'Retrieval Phase', 'retrieval_multiwindow_dose_response.png')
+        ret_q = glmm_dose_q(os.path.join(OUTPUT_DIR, 'retrieval_multiwindow_mlm_coefs.csv'),
+                            'retrieval')
+        print(f'  GLMM dose q-values (vs 1 window): {ret_q}')
+        plot_dose_response(ret, ret_q, 'Retrieval Phase', 'retrieval_multiwindow_dose_response.png')
         plot_combinations(ret, 'Retrieval Phase', 'retrieval_multiwindow_combinations.png')
+        plot_window_count_combo(ret, ret_q, 'Retrieval Phase', 'retrieval_multiwindow_window_count.png')
         plot_by_subject(ret, 'Retrieval Phase', 'retrieval_multiwindow_by_subject.png')
     else:
         print('No retrieval data available for multiwindow analysis.')

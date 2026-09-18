@@ -73,7 +73,16 @@ BAND_LABELS = {"theta": "Theta (4-8 Hz)", "slow_gamma": "Slow Gamma (30-55 Hz)"}
 
 
 def display_region(r):
-    return r.replace("_", "-")
+    # ALLHPC = macro hippocampus -> "HPC"; HPC region = subiculum -> "SUB"
+    parts = []
+    for p in str(r).split("_"):
+        if p == "ALLHPC":
+            parts.append("HPC")
+        elif p == "HPC":
+            parts.append("SUB")
+        else:
+            parts.append(p)
+    return "-".join(parts)
 
 
 def feature_name(modality):

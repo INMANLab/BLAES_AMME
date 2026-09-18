@@ -25,9 +25,9 @@ THETA_LO, THETA_HI = 4.88, 7.81
 SG_LO, SG_HI = 30.27, 54.69
 
 PAIR = "EC_HPC"
-PAIR_LABEL = "EC-HPC"
+PAIR_LABEL = "EC-SUB"
 FOCUS_BAND = "slow_gamma_c"
-FOCUS_LABEL = "EC-HPC slow gamma coherence"
+FOCUS_LABEL = "EC-SUB slow gamma coherence"
 INTERACTION_P = 0.008
 
 

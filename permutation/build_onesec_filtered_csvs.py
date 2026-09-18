@@ -14,7 +14,7 @@ Filter rules (per user):
       stimulation == 0 -> trial_type='nostim'
       stimulation == 3 -> trial_type='stim'  (one-sec After-stim)
       Drop stimulation in {1, 2} (Before-stim, During-stim).
-  - AMME Duration (amyg030, 033, 034):
+  - AMME Duration (amyg030, 033, 034, 037):
       keep stimulation in {0, 1}.
       stimulation == 0 -> trial_type='nostim'
       stimulation == 1 -> trial_type='stim'  (one-sec stim)
@@ -52,7 +52,7 @@ RAW_DIR = Path("/Users/martinahollearn/Library/CloudStorage/Box-Box/InmanLab/"
 
 AMME_TIMING = [f"amyg{n:03d}"
                for n in (45, 46, 48, 54, 57, 59, 61, 66, 72)]
-AMME_DURATION = ["amyg030", "amyg033", "amyg034"]
+AMME_DURATION = ["amyg030", "amyg033", "amyg034", "amyg037"]
 AMME_ALL = AMME_TIMING + AMME_DURATION
 
 KEEP_TIMING = {0, 3}

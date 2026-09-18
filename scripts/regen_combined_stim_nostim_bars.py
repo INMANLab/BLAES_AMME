@@ -12,6 +12,7 @@ PHG, and any pair containing MTL or PHG are removed. Other settings preserved.
 """
 from __future__ import annotations
 
+import re
 import sys
 import importlib.util
 from pathlib import Path
@@ -23,6 +24,22 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from scipy import stats as _stats
+
+# Display-label convention: ALLHPC -> "HPC"; standalone "HPC" (subiculum) -> "SUB".
+# Substring-safe via lookarounds; pair names like "ALLHPC_EC" map to "HPC_EC".
+_ALLHPC_RE = re.compile(r"(?<![A-Za-z])ALLHPC(?![A-Za-z])")
+_HPC_RE = re.compile(r"(?<![A-Za-z])HPC(?![A-Za-z])")
+_MARKER = "\x00MACROHIPP\x00"
+
+
+def _display_label(text):
+    if text is None:
+        return text
+    s = str(text)
+    s = _ALLHPC_RE.sub(_MARKER, s)
+    s = _HPC_RE.sub("SUB", s)
+    s = s.replace(_MARKER, "HPC")
+    return s
 
 ROOT = Path("/Users/martinahollearn/Library/CloudStorage/Box-Box/"
             "InmanLab/BLAES_data/dissertation/AMME_BLAES")
@@ -177,6 +194,15 @@ def _plot_one(df_all, mod, measure: str, phase: str, region_set_label: str,
         ordered_regions = sorted(df_all["Region"].unique())
         palette = mod.make_roi_color_map(ordered_regions)
 
+    # Encoding coherence: husl assigns a green to one of the mainregion pairs;
+    # swap to seaborn 'colorblind' minus its green entry so all pairs stay
+    # distinguishable. Retrieval coherence keeps husl.
+    if measure != "power" and phase == "encoding":
+        cb_no_green = ['#0173b2', '#de8f05', '#d55e00', '#cc78bc',
+                       '#ca9161', '#fbafe4', '#56b4e9', '#949494', '#ece133']
+        palette = {r: cb_no_green[i % len(cb_no_green)]
+                   for i, r in enumerate(ordered_regions)}
+
     band_order = ["Theta", "Slow gamma"]
     mem_order = ["remembered", "forgotten"]
     mem_label = {"remembered": "Remembered Trials", "forgotten": "Forgotten Trials"}
@@ -277,8 +303,10 @@ def _plot_one(df_all, mod, measure: str, phase: str, region_set_label: str,
             )
             ax.tick_params(axis="y", labelsize=11)
             ax.set_xticks(x)
-            xtick_labels = [f"{roi} *" if sig_flags[i] else roi
-                             for i, roi in enumerate(ordered_regions)]
+            xtick_labels = [
+                f"{_display_label(roi)} *" if sig_flags[i] else _display_label(roi)
+                for i, roi in enumerate(ordered_regions)
+            ]
             base_fs = 13 if rotate_x else 14
             ax.set_xticklabels(
                 xtick_labels,
@@ -334,6 +362,10 @@ def plot_combined(measure: str, phase: str):
     df_forg["memory_cond"] = "forgotten"
     df_all = pd.concat([df_rem, df_forg], ignore_index=True)
     df_all = df_all[~df_all["Region"].apply(_excluded_region)]
+    # Per user request: drop BLA-containing regions from all encoding 2x2
+    # bargraphs (power + coherence, main + hipp). Retrieval keeps BLA.
+    if phase == "encoding":
+        df_all = df_all[~df_all["Region"].apply(lambda r: "BLA" in _region_tokens(r))]
     if df_all.empty:
         print("  All rows excluded.")
         return
@@ -351,6 +383,9 @@ def plot_combined(measure: str, phase: str):
                    else pd.DataFrame())
     if not df_cond_all.empty:
         df_cond_all = df_cond_all[~df_cond_all["Region"].apply(_excluded_region)]
+    if phase == "encoding" and not df_cond_all.empty:
+        df_cond_all = df_cond_all[~df_cond_all["Region"].apply(
+            lambda r: "BLA" in _region_tokens(r))]
 
     df_main = df_all[df_all["Region"].apply(_is_main_region)].copy()
     df_hipp = df_all[df_all["Region"].apply(_is_hipp_subregion)].copy()

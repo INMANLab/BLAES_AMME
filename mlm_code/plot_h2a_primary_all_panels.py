@@ -35,6 +35,19 @@ THETA = (4.88, 7.81)
 SLOW_GAMMA = (30.27, 54.69)
 PAC_SG = (30.0, 50.0)
 
+def pretty_label(name):
+    # ALLHPC = macro hippocampus -> "HPC"; HPC region = subiculum -> "SUB"
+    parts = []
+    for p in str(name).split("_"):
+        if p == "ALLHPC":
+            parts.append("HPC")
+        elif p == "HPC":
+            parts.append("SUB")
+        else:
+            parts.append(p)
+    return "-".join(parts)
+
+
 POWER_REGIONS = ["BLA", "CA", "DG", "HPC", "EC", "PRC"]
 COH_PAIRS = ["BLA_CA","BLA_DG","BLA_HPC","BLA_EC","BLA_PRC","CA_EC","CA_PRC",
              "DG_EC","DG_PRC","EC_HPC","HPC_PRC","EC_PRC"]
@@ -296,18 +309,18 @@ pac_df   = load_modality("pac")
 power_panels = []
 for reg in POWER_REGIONS:
     for bk, bl in BAND_LABELS.items():
-        power_panels.append((f"{reg} - {bl}", power_df, reg,
+        power_panels.append((f"{pretty_label(reg)} - {bl}", power_df, reg,
                              BAND_RANGES[bk], f"power_{reg}_{bk}"))
 
 coh_panels = []
 for pair in COH_PAIRS:
     for bk, bl in BAND_LABELS.items():
-        coh_panels.append((f"{pair.replace('_','-')} - {bl}", coh_df, pair,
+        coh_panels.append((f"{pretty_label(pair)} - {bl}", coh_df, pair,
                            BAND_RANGES[bk], f"coherence_{pair}_{bk}"))
 
 pac_panels = []
 for pair in PAC_PAIRS:
-    pac_panels.append((f"{pair.replace('_','-')} - Slow Gamma PAC", pac_df, pair,
+    pac_panels.append((f"{pretty_label(pair)} - Slow Gamma PAC", pac_df, pair,
                        PAC_SG, f"pac_{pair}_slow_gamma"))
 
 

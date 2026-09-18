@@ -82,9 +82,11 @@ SCOPE_UNITS = {
         "needs_allhpc": False,
     },
     "HippSubRhinal": {
-        "power":     ["CA", "DG", "HPC", "EC", "PRC"],
-        "coherence": ["CA_EC", "DG_EC", "EC_HPC", "CA_PRC", "DG_PRC", "HPC_PRC", "EC_PRC"],
-        "pac":       ["CA_EC", "DG_EC", "EC_HPC", "CA_PRC", "DG_PRC", "HPC_PRC", "EC_PRC"],
+        # EC, PRC power and EC_PRC pairs belong to HPCrhinal only.
+        # ALLHPC never appears here (subregions only).
+        "power":     ["CA", "DG", "HPC"],
+        "coherence": ["CA_EC", "DG_EC", "EC_HPC", "CA_PRC", "DG_PRC", "HPC_PRC"],
+        "pac":       ["CA_EC", "DG_EC", "EC_HPC", "CA_PRC", "DG_PRC", "HPC_PRC"],
         "needs_allhpc": False,
     },
 }
@@ -271,7 +273,16 @@ def fmt_b(b):
 
 
 def display_unit(u: str) -> str:
-    return u.replace("_", "-")
+    # ALLHPC = macro hippocampus -> "HPC"; HPC region = subiculum -> "SUB"
+    parts = []
+    for p in str(u).split("_"):
+        if p == "ALLHPC":
+            parts.append("HPC")
+        elif p == "HPC":
+            parts.append("SUB")
+        else:
+            parts.append(p)
+    return "-".join(parts)
 
 
 def panel_title(unit: str, band: str) -> str:
@@ -417,7 +428,15 @@ def build_figure(scope: str, measure: str, modeltype: str, band: str):
     data = patient_means(measure, scope, units, band, responder)
 
     n = len(units)
-    if n <= 2:
+    # Encoding HPCrhinal PAC only: stack the three units (ALLHPC_EC,
+    # ALLHPC_PRC, EC_PRC) into one column with panel dimensions matched to
+    # the encoding HPCrhinal coherence panels (~2.56" x 2.09"). Retrieval
+    # PAC keeps the default 2x2-with-blank layout.
+    is_hpcrhinal_pac = (scope == "HPCrhinal" and measure == "pac"
+                        and PHASE == "encoding")
+    if is_hpcrhinal_pac:
+        ncols, nrows = 1, n
+    elif n <= 2:
         ncols, nrows = n, 1
     elif n <= 4:
         ncols, nrows = 2, 2
@@ -426,11 +445,19 @@ def build_figure(scope: str, measure: str, modeltype: str, band: str):
     else:
         ncols, nrows = 3, int(np.ceil(n / 3))
 
-    fig_w = 3.0 * ncols + 0.6
-    fig_h = 2.6 * nrows + 1.0
+    if is_hpcrhinal_pac:
+        # fig_w * (R-L)=0.73 -> axes_w ~2.70"; fig_h * (T-B)=0.80 with
+        # hspace=0.36 -> per-panel height ~2.09" (matched to encoding
+        # HPCrhinal coherence panel box). hspace large enough to keep
+        # each panel's title clear of the x-tick numbers above.
+        fig_w = 3.7
+        fig_h = 9.7
+    else:
+        fig_w = 3.0 * ncols + 0.6
+        fig_h = 2.6 * nrows + 1.0
+
     fig, axes = plt.subplots(nrows, ncols, figsize=(fig_w, fig_h),
                              squeeze=False)
-
     for i, unit in enumerate(units):
         r, c = divmod(i, ncols)
         ax = axes[r][c]
@@ -445,24 +472,101 @@ def build_figure(scope: str, measure: str, modeltype: str, band: str):
     title = (f"{scope} - {MEASURE_TITLES[measure]} - {BAND_TITLES[band]}\n"
              f"{MODELTYPE_TITLES[modeltype]} predicting "
              f"{measure} at {PHASE}")
-    fig.suptitle(title, fontsize=11, y=0.995)
+    fig.suptitle(title,
+                 fontsize=10 if is_hpcrhinal_pac else 11,
+                 y=0.97,
+                 fontweight="bold")
 
     if modeltype == "LMMcont":
         x_lab = "Z-scored memory modulation status"
     else:
         x_lab = "Responder group"
-    fig.supxlabel(x_lab, fontsize=9, y=0.005)
     y_unit = {"power": "Band-averaged power (dB)",
               "coherence": "Band-averaged coherence",
               "pac": "Band-averaged PAC"}[measure]
-    fig.supylabel(y_unit, fontsize=9, x=0.005)
-    fig.tight_layout(rect=[0.02, 0.04, 1.0, 0.95])
+    if is_hpcrhinal_pac:
+        # T=0.88 leaves a generous (~0.93") gap to the suptitle at y=0.97;
+        # left=0.22 keeps the supylabel clear of the y-tick numbers;
+        # hspace=0.50 leaves room between each panel's x-tick numbers and
+        # the next panel's title.
+        fig.subplots_adjust(left=0.22, right=0.95, bottom=0.08, top=0.88,
+                            wspace=0.22, hspace=0.36)
+    else:
+        fig.subplots_adjust(left=0.13, right=0.99, bottom=0.13, top=0.88,
+                            wspace=0.22, hspace=0.22)
+    fig.supxlabel(x_lab, fontsize=12, fontweight="bold", y=0.018)
+    fig.supylabel(y_unit, fontsize=12, fontweight="bold", x=0.015)
 
     out_dir = os.path.join(OUT_FIG_ROOT, f"{scope}_{measure}_{modeltype}")
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir,
                             f"{scope}_{measure}_{modeltype}_{band}.png")
-    fig.savefig(out_path, dpi=200)
+    fig.savefig(out_path, dpi=200, bbox_inches="tight", pad_inches=0.05)
+    plt.close(fig)
+    print(f"-> {out_path}")
+    return out_path
+
+
+# ---------------------------------------------------------------------------
+# Combined-bands figure builder (theta col, slow_gamma col)
+# ---------------------------------------------------------------------------
+
+def build_combined_bands_figure(scope: str, measure: str, modeltype: str):
+    """One figure per (scope, measure, modeltype): rows=units, cols=bands.
+    Only applies to measures with both theta and slow_gamma (power, coherence).
+    """
+    bands = MEASURE_BANDS[measure]
+    if len(bands) < 2:
+        return None  # skip PAC (slow_gamma only)
+    all_units = SCOPE_UNITS[scope][measure]
+    units = [u for u in all_units
+             if any(os.path.exists(coef_path(measure, scope, modeltype, u, b))
+                    for b in bands)]
+    if not units:
+        print(f"   skip {scope}/{measure}/{modeltype} combined: no fits")
+        return None
+
+    responder = load_responder()
+    band_data = {b: patient_means(measure, scope, units, b, responder)
+                 for b in bands}
+
+    nrows, ncols = len(units), len(bands)
+    fig_w = 3.4 * ncols + 0.8
+    fig_h = 2.7 * nrows + 1.0
+    fig, axes = plt.subplots(nrows, ncols, figsize=(fig_w, fig_h),
+                             squeeze=False)
+
+    for r, unit in enumerate(units):
+        for c, band in enumerate(bands):
+            ax = axes[r][c]
+            if not os.path.exists(coef_path(measure, scope, modeltype, unit, band)):
+                ax.axis("off")
+                continue
+            if modeltype == "LMMcont":
+                plot_lmmcont_panel(ax, measure, scope, unit, band, band_data[band])
+            else:
+                plot_lmmquad_panel(ax, measure, scope, unit, band, band_data[band])
+
+    phase_label = "Retrieval" if PHASE == "retrieval" else "Encoding"
+    title = (f"{scope} - {MEASURE_TITLES[measure]} - "
+             f"{MODELTYPE_TITLES[modeltype]} - {phase_label}")
+    fig.suptitle(title, fontsize=12, y=0.995)
+
+    x_lab = ("Z-scored memory modulation status" if modeltype == "LMMcont"
+             else "Responder group")
+    y_unit = {"power": "Band-averaged power (dB)",
+              "coherence": "Band-averaged coherence",
+              "pac": "Band-averaged PAC"}[measure]
+    fig.subplots_adjust(left=0.10, right=0.99, bottom=0.07, top=0.95,
+                        wspace=0.22, hspace=0.32)
+    fig.supxlabel(x_lab, fontsize=12, fontweight="bold", y=0.015)
+    fig.supylabel(y_unit, fontsize=12, fontweight="bold", x=0.015)
+
+    out_dir = os.path.join(OUT_FIG_ROOT, f"{scope}_{measure}_{modeltype}")
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir,
+                            f"{scope}_{measure}_{modeltype}_combined_bands.png")
+    fig.savefig(out_path, dpi=200, bbox_inches="tight", pad_inches=0.05)
     plt.close(fig)
     print(f"-> {out_path}")
     return out_path
@@ -480,11 +584,28 @@ DEFAULT_RUNS = [
     for band in MEASURE_BANDS[measure]
 ]
 
+DEFAULT_COMBINED_RUNS = [
+    (scope, measure, modeltype)
+    for scope in ("BLAMTL", "HPCrhinal", "HippSubBLA", "HippSubRhinal")
+    for measure in ("power", "coherence")
+    for modeltype in ("LMMcont", "LMMquad")
+]
+
 
 def main(argv):
     argv = list(argv)
     if argv and argv[0] in ("retrieval", "encoding"):
         _set_phase(argv.pop(0))
+    combined = "--combined-bands" in argv
+    argv = [a for a in argv if a != "--combined-bands"]
+    if combined:
+        if len(argv) >= 3:
+            runs = [(argv[0], argv[1], argv[2])]
+        else:
+            runs = DEFAULT_COMBINED_RUNS
+        for scope, measure, modeltype in runs:
+            build_combined_bands_figure(scope, measure, modeltype)
+        return
     if len(argv) >= 4:
         runs = [(argv[0], argv[1], argv[2], argv[3])]
     else:

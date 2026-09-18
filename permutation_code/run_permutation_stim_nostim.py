@@ -17,6 +17,7 @@ Usage:
 """
 
 from pathlib import Path
+import re
 import sys
 
 import matplotlib
@@ -25,6 +26,20 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy import stats
+
+_ALLHPC_RE = re.compile(r"(?<![A-Za-z])ALLHPC(?![A-Za-z])")
+_HPC_RE = re.compile(r"(?<![A-Za-z])HPC(?![A-Za-z])")
+_MARKER = "\x00__MACRO_HPC__\x00"
+
+
+def pretty_in_text(text):
+    if text is None:
+        return text
+    s = str(text)
+    s = _ALLHPC_RE.sub(_MARKER, s)
+    s = _HPC_RE.sub("SUB", s)
+    s = s.replace(_MARKER, "HPC")
+    return s
 
 ROOT = Path("/Users/martinahollearn/Library/CloudStorage/Box-Box/InmanLab/"
             "BLAES_data/dissertation/AMME_BLAES")
@@ -223,7 +238,7 @@ def plot_region_panel(ax, freqs, X_S, X_N, clusters, region, ylabel):
         target_top = max(ymax, sig_text_y_max + 0.10 * full_range)
         ax.set_ylim(ymin, target_top + 0.08 * full_range)
 
-    title = f"{region} (n={X_S.shape[0]})"
+    title = f"{pretty_in_text(region)} (n={X_S.shape[0]})"
     sig_clusters = [c for c in clusters if c["p_value"] < .05]
     if sig_clusters:
         title += " *"

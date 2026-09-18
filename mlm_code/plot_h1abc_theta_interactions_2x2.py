@@ -32,6 +32,19 @@ HPC_SUB = ("HPC", "CA", "DG")
 COND_COLOR = {"nostim": "#1f77b4", "stim": "#d62728"}
 COND_LABEL = {"nostim": "No stim", "stim": "Stim"}
 
+
+def pretty_label(name):
+    # ALLHPC = macro hippocampus -> "HPC"; HPC region = subiculum -> "SUB"
+    parts = []
+    for p in str(name).split("_"):
+        if p == "ALLHPC":
+            parts.append("HPC")
+        elif p == "HPC":
+            parts.append("SUB")
+        else:
+            parts.append(p)
+    return "-".join(parts)
+
 # Order user requested: ALLHPC, BLA, EC, PRC. p_raw and q_FDR pulled from
 # fdr_power_BLAMTL_GLMM_retrieval/power_BLAMTL_GLMM_theta_band_c_x_StimCondstim.csv
 PANELS = [
@@ -105,10 +118,11 @@ def draw_panel(ax, region, p_raw, q_fdr, mark_star):
 
     ax.axhline(0.5, ls=":", color="0.5", lw=0.8)
     ax.axvline(0.0, ls=":", color="0.5", lw=0.8)
-    ax.set_xlabel(f"{region} theta power", fontsize=11, fontweight="bold")
+    region_pretty = pretty_label(region)
+    ax.set_xlabel(f"{region_pretty} theta power", fontsize=11, fontweight="bold")
     ax.set_ylabel("P(remembered)", fontsize=11, fontweight="bold")
     ax.set_title(
-        f"{region} theta power x Prior Stimulation\n"
+        f"{region_pretty} theta power x Prior Stimulation\n"
         f"(p = {p_raw:.3f}, q_FDR = {q_fdr:.3f}, "
         f"n trials = {n_trials}, N subjects = {n_subjects})",
         fontsize=11, fontweight="bold",

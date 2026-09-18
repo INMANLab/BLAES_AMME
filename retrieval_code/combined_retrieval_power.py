@@ -1781,16 +1781,17 @@ def plot_power_by_roi_core(data, out_dir, label):
         mat = np.array(list(gap[roi].values()), dtype=np.float64)
         mean, std = mat.mean(0), mat.std(0)
         c = CORE_ROI_COLORS_SPEC.get(roi, 'gray')
-        ax.plot(freqs, mean, color=c, label=f'{roi} ({mat.shape[0]})')
+        display_roi = 'SUB' if roi == 'HPC' else roi
+        ax.plot(freqs, mean, color=c, label=f'{display_roi} ({mat.shape[0]})')
         ax.fill_between(freqs, mean - std, mean + std, alpha=0.2, color=c)
     ax.set_xlabel('Frequency (Hz)', fontsize=18, fontweight='bold')
     ax.set_ylabel('Power (dB)', fontsize=18, fontweight='bold')
-    ax.set_title(f'{label} Retrieval Group Power by ROI (Core Regions)', fontsize=20, fontweight='bold')
+    ax.set_title(f'{label} Retrieval Group Power by ROI (Hipp Subregions)', fontsize=20, fontweight='bold')
     ax.tick_params(axis='both', labelsize=14)
     ax.legend(bbox_to_anchor=(1.02, 0.5), loc='center left', prop={'weight': 'bold', 'size': 12})
     add_method_caption(
         fig,
-        "Method: Each ROI line is the mean retrieval spectrum across patients after averaging each patient's available stim/no-stim and remembered/forgotten spectra. Shading shows ±1 SD across patients. Limited to BLA, CA, DG, EC, HPC, PRC.",
+        "Method: Each ROI line is the mean retrieval spectrum across patients after averaging each patient's available stim/no-stim and remembered/forgotten spectra. Shading shows ±1 SD across patients. Limited to BLA, CA, DG, EC, SUB, PRC.",
     )
     plt.tight_layout(rect=[0, 0.05, 0.85, 1])
     plt.savefig(os.path.join(out_dir, 'GroupPower_byROI_retrieval_core_regions.png'), dpi=300, bbox_inches='tight')

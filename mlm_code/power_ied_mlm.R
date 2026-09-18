@@ -1,18 +1,23 @@
 ##############################################################################
 #  Power x IED Timing Windows MLM - Encoding Only
 #
-#  Per-region power (BLA, HPC, CA, DG) on IED trials only.
+#  Per-region power (BLA = amygdala, HPC) on IED trials only.
 #  Tests whether trial-level power predicts subsequent memory,
 #  controlling for IED timing windows and stimulation.
 #
-#  Models per region and band (theta, slow gamma, HFA):
+#  Streamlined to theta + slow gamma bands and the after-image + during-stim
+#  IED timing windows only (before-image / during-image windows and HFA dropped;
+#  spread and 3-way models dropped).
+#
+#  Models per region and band (theta, slow gamma):
 #    Part 1: All power trials (no IED data needed)
-#      A1: memory ~ pow_band_z + stim + (1|patient_id)
+#      A:  memory ~ pow_band_z + stim + (1|patient_id)
 #    Part 2: IED+power merged trials
-#      T1: memory ~ pow_band_z + timing windows + (1|patient_id)
-#      TI1: memory ~ pow_band_z * timing windows + (1|patient_id)
-#    Part 3: Power + IED Spread
-#      SP1: memory ~ pow_band_z + spread + (1|patient_id)
+#      T:  memory ~ pow_band_z + ied_after_image + ied_during_stim + (1|patient_id)
+#      TI: memory ~ pow_band_z * (ied_after_image + ied_during_stim) + (1|patient_id)
+#      TF: memory ~ pow_band_z + ied_during_stim + ied_after_image + stim + (1|patient_id)
+#      SO: TI model fit within stim trials only (sensitivity)
+#      AI: memory ~ pow_band_z * stim + (1|patient_id), after-image IED trials only
 ##############################################################################
 
 if (!require("lme4"))        install.packages("lme4",        repos = "https://cloud.r-project.org")
@@ -34,7 +39,9 @@ script_dir <- tryCatch(
     else getwd()
   }
 )
-out_dir <- file.path(script_dir, "outputs", "ied_timing_memory")
+# Outputs/data live in the sibling IED/ied_timing_memory dir (scripts were
+# moved into mlm_code/ during the topic-dir reorg, but the data did not move).
+out_dir <- file.path(dirname(script_dir), "IED", "ied_timing_memory")
 ctrl <- glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 200000))
 
 save_tidy <- function(model, filename) {
@@ -78,9 +85,10 @@ save_lrt <- function(m_reduced, m_full, filename) {
   return(lrt_df)
 }
 
-bands <- c("theta", "slow_gamma", "hfa")
-band_labels <- c("Theta (4-8 Hz)", "Slow Gamma (30-55 Hz)", "HFA (70-100 Hz)")
-regions <- c("BLA", "HPC", "CA", "DG")
+# Streamlined: theta + slow gamma only (drop HFA), amygdala (BLA) + HPC only.
+bands <- c("theta", "slow_gamma")
+band_labels <- c("Theta (4-8 Hz)", "Slow Gamma (30-55 Hz)")
+regions <- c("BLA", "HPC")
 
 ##############################################################################
 # PART 1: ALL POWER TRIALS -> MEMORY
@@ -150,8 +158,7 @@ for (reg in regions) {
   cat(sprintf("  Memory rate: %.1f%%\n", mean(sub$memory) * 100))
 
   cat("  Timing window distribution:\n")
-  for (v in c("ied_before_image", "ied_during_image",
-              "ied_after_image", "ied_during_stim")) {
+  for (v in c("ied_after_image", "ied_during_stim")) {
     n1 <- sum(sub[[v]])
     cat(sprintf("    %s: %d/%d (%.1f%%)\n", v, n1, nrow(sub),
                 n1 / nrow(sub) * 100))
@@ -170,8 +177,7 @@ for (reg in regions) {
     cat(sprintf("\n  MODEL T_%s_%s: %s + Timing Windows\n", reg, b, bl))
     m <- tryCatch({
       glmer(as.formula(paste0(
-        "memory ~ ", zcol, " + ied_before_image + ied_during_image + ",
-        "ied_after_image + ied_during_stim + (1 | patient_id)"
+        "memory ~ ", zcol, " + ied_after_image + ied_during_stim + (1 | patient_id)"
       )), data = sub, family = binomial, control = ctrl)
     }, error = function(e) { cat("    Failed:", conditionMessage(e), "\n"); NULL })
     if (!is.null(m)) {
@@ -189,8 +195,8 @@ for (reg in regions) {
     cat(sprintf("\n  MODEL TI_%s_%s: %s x Timing Interactions\n", reg, b, bl))
     m <- tryCatch({
       glmer(as.formula(paste0(
-        "memory ~ ", zcol, " * ied_before_image + ", zcol, " * ied_during_image + ",
-        zcol, " * ied_after_image + ", zcol, " * ied_during_stim + (1 | patient_id)"
+        "memory ~ ", zcol, " * ied_after_image + ",
+        zcol, " * ied_during_stim + (1 | patient_id)"
       )), data = sub, family = binomial, control = ctrl)
     }, error = function(e) { cat("    Failed:", conditionMessage(e), "\n"); NULL })
     if (!is.null(m)) {
@@ -204,27 +210,40 @@ for (reg in regions) {
     }
   }
 
-  # Part 2c: Spread models
-  sub$n_regions_c <- as.numeric(scale(sub$n_regions, scale = FALSE))
-  sub$n_channels_c <- as.numeric(scale(sub$n_channels, scale = FALSE))
-
+  # Part 2b-robustness: the power x IED-during-stim interaction estimate depends
+  # on which other window interactions are in the model (the windows co-occur on
+  # trials, so the interaction terms are correlated). Fit two extra
+  # specifications for sensitivity reporting alongside the 2-window TI model:
+  #   TI4 = power x all four windows (before/during-image + after-image + during-stim)
+  #   TID = power x during-stim only (the headline term in isolation)
   for (i in seq_along(bands)) {
     b <- bands[i]; bl <- band_labels[i]; zcol <- paste0("pow_", b, "_z")
 
-    cat(sprintf("\n  MODEL SP_%s_%s: %s + Spread\n", reg, b, bl))
+    cat(sprintf("\n  MODEL TI4_%s_%s: %s x ALL FOUR windows\n", reg, b, bl))
     m <- tryCatch({
       glmer(as.formula(paste0(
-        "memory ~ ", zcol, " + n_regions_c + n_channels_c + (1 | patient_id)"
+        "memory ~ ", zcol, " * ied_before_image + ", zcol, " * ied_during_image + ",
+        zcol, " * ied_after_image + ", zcol, " * ied_during_stim + (1 | patient_id)"
       )), data = sub, family = binomial, control = ctrl)
     }, error = function(e) { cat("    Failed:", conditionMessage(e), "\n"); NULL })
     if (!is.null(m)) {
-      print(summary(m))
-      save_tidy(m, sprintf("pow_SP_%s_%s_odds_ratios.csv", reg, b))
-      save_diagnostics(m, sprintf("pow_SP_%s_%s_diagnostics.csv", reg, b))
+      save_tidy(m, sprintf("pow_TI4_%s_%s_odds_ratios.csv", reg, b))
+      save_diagnostics(m, sprintf("pow_TI4_%s_%s_diagnostics.csv", reg, b))
+    }
+
+    cat(sprintf("\n  MODEL TID_%s_%s: %s x during-stim only\n", reg, b, bl))
+    m <- tryCatch({
+      glmer(as.formula(paste0(
+        "memory ~ ", zcol, " * ied_during_stim + (1 | patient_id)"
+      )), data = sub, family = binomial, control = ctrl)
+    }, error = function(e) { cat("    Failed:", conditionMessage(e), "\n"); NULL })
+    if (!is.null(m)) {
+      save_tidy(m, sprintf("pow_TID_%s_%s_odds_ratios.csv", reg, b))
+      save_diagnostics(m, sprintf("pow_TID_%s_%s_diagnostics.csv", reg, b))
     }
   }
 
-  # Part 2d: Focused model - only during-stim + after-image windows + stim
+  # Part 2c: Focused model - during-stim + after-image windows + stim covariate
   for (i in seq_along(bands)) {
     b <- bands[i]; bl <- band_labels[i]; zcol <- paste0("pow_", b, "_z")
 
@@ -241,25 +260,60 @@ for (reg in regions) {
     }
   }
 
-  # Part 2e: 3-way interaction: power x IED-after-image x stim
-  # Tests whether stimulation moderates the power x IED-after-image
-  # relationship. Only theta and slow gamma (matching stim frequencies).
-  # Note: stim x ied_during_stim is unestimable (during-stim IEDs occur
-  # exclusively on stim trials by design).
-  for (i in seq_along(bands)) {
-    b <- bands[i]; bl <- band_labels[i]; zcol <- paste0("pow_", b, "_z")
-    if (b == "hfa") next
+  # Part 2d: Stim sensitivity - Power x IED timing within STIM TRIALS ONLY (SO)
+  # Sensitivity check that the Power x IED-during-stim interaction is not an
+  # artifact of stim vs. sham differences. Same z-scoring as the full-sample
+  # models above (sub already carries pow_*_z); restrict to stim trials.
+  sub_stim <- sub[sub$stim == 1, ]
+  sub_stim$patient_id <- factor(sub_stim$patient_id)
+  if (nrow(sub_stim) >= 20 && nlevels(sub_stim$patient_id) >= 3) {
+    cat(sprintf("\n  --- %s stim-only subsample: %d trials, %d patients ---\n",
+                reg, nrow(sub_stim), nlevels(sub_stim$patient_id)))
+    for (i in seq_along(bands)) {
+      b <- bands[i]; bl <- band_labels[i]; zcol <- paste0("pow_", b, "_z")
+      cat(sprintf("\n  MODEL SO_%s_%s: %s x IED timing (stim trials only)\n", reg, b, bl))
+      m <- tryCatch({
+        glmer(as.formula(paste0(
+          "memory ~ ", zcol, " * ied_after_image + ",
+          zcol, " * ied_during_stim + (1 | patient_id)"
+        )), data = sub_stim, family = binomial, control = ctrl)
+      }, error = function(e) { cat("    Failed:", conditionMessage(e), "\n"); NULL })
+      if (!is.null(m)) {
+        print(summary(m))
+        save_tidy(m, sprintf("pow_SO_%s_%s_odds_ratios.csv", reg, b))
+        save_diagnostics(m, sprintf("pow_SO_%s_%s_diagnostics.csv", reg, b))
+      }
+    }
+  }
 
-    cat(sprintf("\n  MODEL 3WAY_%s_%s: %s x IED-After-Image x Stim\n", reg, b, bl))
-    m <- tryCatch({
-      glmer(as.formula(paste0(
-        "memory ~ ", zcol, " * ied_after_image * stim + (1 | patient_id)"
-      )), data = sub, family = binomial, control = ctrl)
-    }, error = function(e) { cat("    Failed:", conditionMessage(e), "\n"); NULL })
-    if (!is.null(m)) {
-      print(summary(m))
-      save_tidy(m, sprintf("pow_3WAY_%s_%s_odds_ratios.csv", reg, b))
-      save_diagnostics(m, sprintf("pow_3WAY_%s_%s_diagnostics.csv", reg, b))
+  # Part 2e: Power x Stim interaction on AFTER-IMAGE IED trials (AI)
+  # Tests whether stimulation moderates the power-memory relationship on the
+  # timing window with adequate stim/sham representation (after-image). The
+  # during-stim window is confounded with stim by design, so it cannot be used.
+  sub_ai <- ied_pw[ied_pw$region == reg & ied_pw$ied_after_image == 1, ]
+  pc_ai <- table(sub_ai$patient_id)
+  kp_ai <- names(pc_ai)[pc_ai >= 5]
+  sub_ai <- sub_ai[sub_ai$patient_id %in% kp_ai, ]
+  sub_ai$patient_id <- factor(sub_ai$patient_id)
+  if (nrow(sub_ai) >= 20 && nlevels(sub_ai$patient_id) >= 3) {
+    for (b in bands) {
+      sub_ai[[paste0("pow_", b, "_z")]] <- as.numeric(scale(sub_ai[[paste0("pow_", b)]]))
+    }
+    cat(sprintf("\n  --- %s after-image subsample: %d trials, %d patients ---\n",
+                reg, nrow(sub_ai), nlevels(sub_ai$patient_id)))
+    for (i in seq_along(bands)) {
+      b <- bands[i]; bl <- band_labels[i]; zcol <- paste0("pow_", b, "_z")
+      cat(sprintf("\n  MODEL AI_%s_%s: %s x Stim (after-image trials)\n", reg, b, bl))
+      m <- tryCatch({
+        glmer(as.formula(paste0(
+          "memory ~ ", zcol, " * stim + (1 | patient_id)"
+        )), data = sub_ai, family = binomial, control = ctrl)
+      }, error = function(e) { cat("    Failed:", conditionMessage(e), "\n"); NULL })
+      if (!is.null(m)) {
+        print(summary(m))
+        save_tidy(m, sprintf("pow_AI_%s_%s_odds_ratios.csv", reg, b))
+        save_diagnostics(m, sprintf("pow_AI_%s_%s_diagnostics.csv", reg, b))
+      }
     }
   }
 }

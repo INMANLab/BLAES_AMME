@@ -1,0 +1,99 @@
+===== ENCODING: memory ~ bilateral_ied + (1|patient_id) =====
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ bilateral_ied + (1 | patient_id)
+   Data: enc_bi
+Control: ctrl
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    438.2     449.6    -216.1     432.2       325 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-2.0115 -1.1287  0.6055  0.8369  1.2520 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 0.2488   0.4988  
+Number of obs: 328, groups:  patient_id, 10
+
+Fixed effects:
+              Estimate Std. Error z value Pr(>|z|)   
+(Intercept)     0.5849     0.2191   2.669  0.00761 **
+bilateral_ied  -0.6917     0.2665  -2.595  0.00946 **
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr)
+bilateral_d -0.327
+
+
+===== ENCODING robustness: memory ~ bilateral_ied + stim + (1|patient_id) =====
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ stim + bilateral_ied + (1 | patient_id)
+   Data: enc_bi
+Control: ctrl
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    439.7     454.8    -215.8     431.7       324 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-2.0471 -1.0857  0.6458  0.8226  1.2870 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 0.2266   0.476   
+Number of obs: 328, groups:  patient_id, 10
+
+Fixed effects:
+              Estimate Std. Error z value Pr(>|z|)  
+(Intercept)     0.4886     0.2508   1.948   0.0514 .
+stim            0.1717     0.2371   0.724   0.4690  
+bilateral_ied  -0.6690     0.2680  -2.497   0.0125 *
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) stim  
+stim        -0.525       
+bilateral_d -0.342  0.112
+
+
+===== RETRIEVAL: memory ~ bilateral_ied + (1|patient_id) =====
+
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: memory ~ bilateral_ied + (1 | patient_id)
+   Data: ret_bi
+Control: ctrl
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+     75.6      81.7     -34.8      69.6        53 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-1.9994 -1.2621  0.5475  0.7466  0.8487 
+
+Random effects:
+ Groups     Name        Variance Std.Dev.
+ patient_id (Intercept) 0.2642   0.514   
+Number of obs: 56, groups:  patient_id, 6
+
+Fixed effects:
+              Estimate Std. Error z value Pr(>|z|)  
+(Intercept)     0.6782     0.3973   1.707   0.0878 .
+bilateral_ied   0.5463     0.8902   0.614   0.5394  
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr)
+bilateral_d -0.310

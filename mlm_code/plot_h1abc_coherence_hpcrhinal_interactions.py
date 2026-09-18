@@ -38,6 +38,19 @@ COND_COLOR = {"nostim": "#1f77b4", "stim": "#d62728"}
 COND_LABEL = {"nostim": "No stim", "stim": "Stim"}
 
 
+def pretty_label(name):
+    # ALLHPC = macro hippocampus -> "HPC"; HPC region = subiculum -> "SUB"
+    parts = []
+    for p in str(name).split("_"):
+        if p == "ALLHPC":
+            parts.append("HPC")
+        elif p == "HPC":
+            parts.append("SUB")
+        else:
+            parts.append(p)
+    return "-".join(parts)
+
+
 # Panel definitions: (pair, p_raw, q_FDR, mark_star)
 # All q-values pulled from the latest FDR family CSVs:
 # fdr_coherence_HPCrhinal_GLMM_retrieval/coherence_HPCrhinal_GLMM_*.csv
@@ -117,7 +130,7 @@ def draw_panel(ax, glmm_dir, pair, band_name, band_label,
 
     n_trials = len(df)
     n_subjects = int(df["Patient"].nunique())
-    pair_pretty = pair.replace("_", "-")
+    pair_pretty = pretty_label(pair)
 
     for cond in ["nostim", "stim"]:
         sub = pred[pred["stim"] == cond]
@@ -215,7 +228,7 @@ def main():
         hpcrhinal_dir, "HPCrhinal_coherence_slow_gamma_interactions_3x1.png",
         nrows=1, ncols=3, figsize=(18, 6.2),
         family_caption=("No pair survives FDR within the HPCrhinal coherence "
-                        "slow gamma family; ALLHPC-PRC is the closest at "
+                        "slow gamma family; HPC-PRC is the closest at "
                         "q = 0.052 (+)."),
     )
 
@@ -247,7 +260,7 @@ def main():
         hipprhinal_dir,
         "HippSubRhinal_coherence_slow_gamma_interactions_2x3.png",
         nrows=2, ncols=3, figsize=(18, 11),
-        family_caption=("EC-HPC and CA-PRC survive FDR within the HippSubRhinal "
+        family_caption=("EC-SUB and CA-PRC survive FDR within the HippSubRhinal "
                         "slow gamma family; * marks the FDR-significant panels."),
     )
 

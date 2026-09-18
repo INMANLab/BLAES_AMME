@@ -106,6 +106,9 @@ def plot_overall(mod, gap, freqs, measure: str, phase: str):
 
     keep_fn = _is_main_power if measure == "power" else _is_main_pair
     rois = sorted(r for r in gap.keys() if keep_fn(r))
+    # Encoding-only: drop BLA singletons and any pair containing BLA.
+    if phase == "encoding":
+        rois = [r for r in rois if "BLA" not in str(r).split("_")]
     if not rois:
         print(f"  [{phase} {measure}] no main regions present, skipping.")
         return None
@@ -115,6 +118,10 @@ def plot_overall(mod, gap, freqs, measure: str, phase: str):
     else:
         palette = mod.make_roi_color_map(rois)
 
+    def _display(r: str) -> str:
+        parts = str(r).split("_")
+        return "_".join("HPC" if p == "ALLHPC" else p for p in parts)
+
     fig, ax = plt.subplots(figsize=(12, 8))
     for roi in rois:
         mat = np.array(list(gap[roi].values()), dtype=np.float64)
@@ -123,7 +130,7 @@ def plot_overall(mod, gap, freqs, measure: str, phase: str):
         mean = mat.mean(0)
         std = mat.std(0)
         c = palette[roi]
-        ax.plot(freqs, mean, color=c, label=f"{roi} ({mat.shape[0]})", lw=1.6)
+        ax.plot(freqs, mean, color=c, label=f"{_display(roi)} ({mat.shape[0]})", lw=1.6)
         ax.fill_between(freqs, mean - std, mean + std, alpha=0.2, color=c)
 
     ax.set_xlabel("Frequency (Hz)", fontsize=18, fontweight="bold")

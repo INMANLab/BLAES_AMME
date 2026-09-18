@@ -13,9 +13,32 @@ Provides:
 """
 from __future__ import annotations
 
+import re
+
 import numpy as np
 import pandas as pd
 from scipy import stats
+
+
+# --- Display-label convention -------------------------------------------------
+# ALLHPC = macro hippocampus -> display "HPC"
+# HPC region = anatomically subiculum -> display "SUB"
+# Replaces standalone tokens only; leaves substrings inside scope names
+# like HPCrhinal / HippSubBLA untouched.
+_ALLHPC_RE = re.compile(r"(?<![A-Za-z])ALLHPC(?![A-Za-z])")
+_HPC_RE = re.compile(r"(?<![A-Za-z])HPC(?![A-Za-z])")
+_MARKER = "\x00MACROHIPP\x00"
+
+
+def pretty_in_text(text):
+    """Rewrite figure-facing text for the ALLHPC→HPC, HPC→SUB convention."""
+    if text is None:
+        return text
+    s = str(text)
+    s = _ALLHPC_RE.sub(_MARKER, s)
+    s = _HPC_RE.sub("SUB", s)
+    s = s.replace(_MARKER, "HPC")
+    return s
 
 
 # --- Frequency families ------------------------------------------------------
@@ -389,11 +412,15 @@ def plot_region_panel_dual(
         ax.set_xlim(*xlim)
 
     title = f"{region} (n={X_A.shape[0]})"
+    is_sig = False
     if any(c["p_value"] < .05 and c["confirmatory"] for c in clusters):
         title += " **"
+        is_sig = True
     elif any(c["p_value"] < .05 for c in clusters):
         title += " *"
-    ax.set_title(title, fontsize=10)
+        is_sig = True
+    ax.set_title(pretty_in_text(title), fontsize=10,
+                 fontweight="bold" if is_sig else "normal")
     ax.tick_params(labelsize=8)
 
 
@@ -607,9 +634,13 @@ def plot_region_panel_bandwise(
         ax.set_ylim(ymin, target_top)
 
     title = f"{region} (n={X_A.shape[0]})"
+    is_sig = False
     if any(b["p_value"] < .05 and b["confirmatory"] for b in bands):
         title += " **"
+        is_sig = True
     elif any(b["p_value"] < .05 for b in bands):
         title += " *"
-    ax.set_title(title, fontsize=10)
+        is_sig = True
+    ax.set_title(pretty_in_text(title), fontsize=10,
+                 fontweight="bold" if is_sig else "normal")
     ax.tick_params(labelsize=8)

@@ -25,9 +25,24 @@ from __future__ import annotations
 
 import glob
 import os
+import re
 import sys
 import warnings
 from pathlib import Path
+
+_ALLHPC_RE = re.compile(r"(?<![A-Za-z])ALLHPC(?![A-Za-z])")
+_HPC_RE = re.compile(r"(?<![A-Za-z])HPC(?![A-Za-z])")
+_MARKER = "\x00__MACRO_HPC__\x00"
+
+
+def pretty_in_text(text):
+    if text is None:
+        return text
+    s = str(text)
+    s = _ALLHPC_RE.sub(_MARKER, s)
+    s = _HPC_RE.sub("SUB", s)
+    s = s.replace(_MARKER, "HPC")
+    return s
 
 import matplotlib
 matplotlib.use('Agg')
@@ -988,7 +1003,7 @@ def save_summary_text(
         lines.append('  None')
     else:
         for region, region_df in region_stats_df.groupby('Region'):
-            lines.append(f'  {region}')
+            lines.append(f'  {pretty_in_text(region)}')
             for _, row in region_df.sort_values(['trial_type', 'memory_cond']).iterrows():
                 lines.append(
                     f"    {STIM_LABELS[row['trial_type']]} {MEMORY_LABELS[row['memory_cond']]}: "
@@ -1146,7 +1161,7 @@ def analyze_metric_phase(
 
         region_slug = slugify(region)
         title_prefix = (
-            f'{metric_label} | {region} | {phase_label} | '
+            f'{metric_label} | {pretty_in_text(region)} | {phase_label} | '
             f'Unbalanced Memory Subjects (<{LOW_TRIAL_THRESHOLD} overall remembered or forgotten)'
         )
         plot_main_curves(

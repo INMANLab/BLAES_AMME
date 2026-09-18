@@ -54,7 +54,7 @@ COND_LABEL = {"nostim": "No stim", "stim": "Stim"}
 # fit time, <4 patients) and EC_PRC (owned by HPCrhinal).
 SCOPE_UNITS = {
     ("power", "HPCrhinal"):       ["ALLHPC", "EC", "PRC"],
-    ("power", "HippSubRhinal"):   ["CA", "DG", "HPC", "EC", "PRC"],
+    ("power", "HippSubRhinal"):   ["CA", "DG", "HPC"],
     ("coherence", "HPCrhinal"):     ["ALLHPC_EC", "ALLHPC_PRC", "EC_PRC"],
     ("coherence", "HippSubRhinal"): ["CA_EC", "EC_HPC", "CA_PRC", "DG_PRC", "HPC_PRC"],
     ("pac", "HPCrhinal"):           ["ALLHPC_EC", "ALLHPC_PRC", "EC_PRC"],
@@ -64,7 +64,7 @@ SCOPE_UNITS = {
 # Grid layout (nrows, ncols, figsize_wh) per scope, used for every band.
 GRID = {
     ("power", "HPCrhinal"):       (1, 3, (18, 6.2)),
-    ("power", "HippSubRhinal"):   (2, 3, (18, 11)),
+    ("power", "HippSubRhinal"):   (1, 3, (18, 6.2)),
     ("coherence", "HPCrhinal"):     (1, 3, (18, 6.2)),
     ("coherence", "HippSubRhinal"): (2, 3, (18, 11)),
     ("pac", "HPCrhinal"):           (1, 3, (18, 6.2)),
@@ -85,6 +85,18 @@ CAPTION_BASE = (
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
+
+def pretty_label(name):
+    # ALLHPC = macro hippocampus -> "HPC"; HPC region = subiculum -> "SUB"
+    parts = []
+    for p in str(name).split("_"):
+        if p == "ALLHPC":
+            parts.append("HPC")
+        elif p == "HPC":
+            parts.append("SUB")
+        else:
+            parts.append(p)
+    return "-".join(parts)
 
 def _add_allhpc_power_rows(df, freq_cols):
     sub = df[df["Region"].isin(HPC_SUB)].copy()
@@ -180,7 +192,7 @@ def draw_panel(ax, measure, scope, unit, band_name, band_label):
     p_raw, q_fdr = load_p_q(measure, scope, unit, band_name)
     n_trials = len(df)
     n_subjects = int(df["Patient"].nunique())
-    unit_pretty = unit.replace("_", "-")
+    unit_pretty = pretty_label(unit)
 
     for cond in ["nostim", "stim"]:
         sub = pred[pred["stim"] == cond]
@@ -220,7 +232,7 @@ def draw_panel(ax, measure, scope, unit, band_name, band_label):
     mark_star = (not np.isnan(q_fdr)) and (q_fdr < 0.05)
     title_meas = "PAC" if measure == "pac" else f"{band_label} {measure}"
     ax.set_title(
-        f"{unit_pretty} {title_meas} x Prior Stimulation\n"
+        f"{unit_pretty} {title_meas} x BLA Stimulation\n"
         f"({p_txt}, {q_txt}, n trials = {n_trials}, N subjects = {n_subjects})",
         fontsize=11, fontweight="bold",
     )
@@ -279,11 +291,11 @@ def build_family_caption(measure, scope, band_name):
     marg = fam[(fam["q_FDR"] >= 0.05) & (fam["q_FDR"] < 0.10)]
     base = f"Encoding {scope} {measure} {band_name.replace('_', ' ')} family."
     if not sig.empty:
-        names = ", ".join(sig["unit"].astype(str).str.replace("_", "-"))
+        names = ", ".join(sig["unit"].astype(str).map(pretty_label))
         return f"{base} FDR-significant pairs (q < .05): {names} (* marks panel)."
     if not marg.empty:
         names = ", ".join(
-            f"{r['unit'].replace('_','-')} (q = {r['q_FDR']:.3f})"
+            f"{pretty_label(r['unit'])} (q = {r['q_FDR']:.3f})"
             for _, r in marg.iterrows()
         )
         return f"{base} No FDR-significant survivors; marginals: {names}."

@@ -45,10 +45,6 @@ for _a in _raw_args:
     if _a.startswith("--region-group="):
         REGION_GROUP = _a.split("=", 1)[1]
 assert REGION_GROUP in (None, "mainregions", "hippsubregions")
-if REGION_GROUP and (BALANCED or ONESEC):
-    raise SystemExit(
-        "--region-group is only supported for the vanilla branch "
-        "(no --balanced, no --onesec)")
 _pos_args = [a for a in _raw_args
              if not a.startswith("--") and "=" not in a]
 
@@ -257,23 +253,18 @@ def run_modality(modality):
         return
     panel_xlim = (30.0, float(freqs.max())) if modality == "pac" else None
 
-    if REGION_GROUP:
-        # Compact layout: pack region-blocks sequentially. Choose (nrows,
-        # blocks_per_row) that minimizes empty cells then most-square aspect.
+    if REGION_GROUP or BALANCED or ONESEC:
+        # Compact gap-free layout for filtered subsets (region groups) and for
+        # the balanced / onesec figures, which otherwise leave whole columns of
+        # the fixed anatomical layout empty. Pack region-blocks (each a
+        # Remembered + Forgotten pair) into a near-square grid of blocks,
+        # filled row-major so the only blanks are trailing cells in the last
+        # row (no interior gap, no prime-count strips).
         regions_in_order = sorted({p["region"] for p in panel_results})
         nR = len(regions_in_order)
-        n_panels = nR * 2
-        best = None
-        for bpr in range(1, nR + 1):
-            nr = int(np.ceil(nR / bpr))
-            nc = bpr * 2
-            empty = nr * nc - n_panels
-            aspect = max(nr, nc) / max(min(nr, nc), 1)
-            # tiebreaker: prefer wider (more cols, fewer rows) for paper layout.
-            score = (empty, aspect, -nc)
-            if best is None or score < best[0]:
-                best = (score, nr, nc, bpr)
-        _, nrows, ncols, blocks_per_row = best
+        blocks_per_row = int(np.ceil(np.sqrt(nR)))
+        nrows = int(np.ceil(nR / blocks_per_row))
+        ncols = blocks_per_row * 2
         fig, axes = plt.subplots(nrows, ncols,
                                  figsize=(ncols * 4.0, nrows * 3.2),
                                  squeeze=False)

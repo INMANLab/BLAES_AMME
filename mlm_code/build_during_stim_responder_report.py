@@ -32,13 +32,16 @@ except ImportError:
 ROOT = '/Users/martinahollearn/Library/CloudStorage/Box-Box/InmanLab/BLAES_data/dissertation/AMME_BLAES'
 ENC_CSV = os.path.join(ROOT, 'IED',
     'AMMEBLAES_IEDs_trial_level_dissertation_study_usethis_cleaned_with_memory.csv')
-RESP_CSV = os.path.join(ROOT, 'behavioral figures',
-    'behavioral_figures_reformatted', 'AMMEBLAES_responder_status.csv')
+RESP_CSV = os.path.join(ROOT, 'OUTPUTS', 'csvs', 'AMMEBLAES_responder_status.csv')
 
-OUT_DIR = os.path.join(ROOT, 'outputs', 'ied_timing_memory')
+OUT_DIR = os.path.join(ROOT, 'IED', 'ied_timing_memory')
 FIG_BOOST = os.path.join(OUT_DIR, 'during_stim_forgetting_boost_by_patient.png')
 FIG_BURDEN = os.path.join(OUT_DIR, 'during_stim_burden_by_responder_group.png')
 PDF_PATH = os.path.join(OUT_DIR, 'During_Stim_IEDs_and_Responder_Status.pdf')
+# Inferential within-group contrasts (precomputed by
+# compute_during_stim_within_group_contrasts.py under anaconda, because
+# statsmodels and fpdf are not installed in the same environment).
+CONTRASTS_CSV = os.path.join(OUT_DIR, 'during_stim_within_group_contrasts_fdr.csv')
 
 RESP_ORDER = ['Anti-responders', 'Non-responders',
               'Moderate responders', 'Strong responders']
@@ -337,16 +340,16 @@ def apa_table(pdf: Report, title_text: str, note_text: str,
     pdf.ln(2)
     pdf.set_font('Times', 'B', 11)
     pdf.cell(0, 5.5, f'Table {tnum}', new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font('Times', 'I', 11)
+    pdf.set_font('Times', '', 11)
     pdf.multi_cell(0, 5.5, title_text)
     pdf.ln(1)
 
     total_w = sum(widths)
 
     _hline(pdf, total_w, 0.5)
-    for label, italic, w, align in zip(header_labels, header_italic_mask,
-                                       widths, row_aligns):
-        pdf.set_font('Times', 'I' if italic else '', 10.5)
+    for label, w, align in zip(header_labels, widths, row_aligns):
+        # Headers: bold, no italics, aligned the same as their column's data.
+        pdf.set_font('Times', 'B', 10.5)
         pdf.cell(w, 5.8, label, align=align)
     pdf.ln(5.8)
     _hline(pdf, total_w, 0.3)
@@ -367,7 +370,7 @@ def apa_table(pdf: Report, title_text: str, note_text: str,
     pdf.ln(1)
 
     if note_text:
-        pdf.set_font('Times', 'I', 9.5)
+        pdf.set_font('Times', '', 9.5)
         pdf.cell(pdf.get_string_width('Note. '), 4.8, 'Note.')
         pdf.set_font('Times', '', 9.5)
         pdf.multi_cell(0, 4.8, ' ' + note_text)
@@ -430,9 +433,11 @@ def main():
         f"Of the {cohort['n_total_encoding_pts']} encoding patients with at "
         f"least one memory-scored IED row, {cohort['n_DS_pts']} had at least "
         "one IED that fell inside the 1.8-s During-Stim window on a "
-        "stimulated (S) trial. All tables below describe that "
-        f"{cohort['n_DS_pts']}-patient subset using counts and percentages "
-        "only - no inferential tests are reported."
+        "stimulated (S) trial. Most tables below describe that "
+        f"{cohort['n_DS_pts']}-patient subset using counts and percentages; "
+        "the one inferential table (Table 3, Section A2) reports the "
+        "patient-clustered GEE test of the During-Stim forgetting effect "
+        "within each responder group, with Benjamini-Hochberg FDR correction."
     )
     pdf.body(
         'Trial-level rows are formed by collapsing the encoding IED CSV to '
@@ -565,6 +570,78 @@ def main():
                    'weight more.'),
         header_labels=headers2, header_italic_mask=italics2,
         widths=widths2, row_dicts=rows2, row_aligns=aligns2)
+
+    # ---- A2: inferential within-group contrasts (precomputed GEE + FDR) ----
+    pdf.ln(2)
+    pdf.h2('A2. Inferential test: within-group During-Stim forgetting (patient-clustered GEE)')
+    if os.path.exists(CONTRASTS_CSV):
+        contrasts = pd.read_csv(CONTRASTS_CSV)
+        order = ['Strong responders', 'Anti-responders',
+                 'Non-responders', 'Moderate responders']
+        contrasts['Predictor'] = pd.Categorical(contrasts['Group'],
+                                                categories=order, ordered=True)
+        contrasts = contrasts.sort_values('Predictor')
+        n_trials = int(contrasts['n_trials_total'].iloc[0])
+        n_pats = int(contrasts['n_patients'].iloc[0])
+
+        pdf.body(
+            'Each row is the simple effect of a During-Stimulation-window IED '
+            'within that responder group, from a patient-clustered binomial GEE '
+            '(forgotten ~ During-Stim x responder group, exchangeable working '
+            'correlation). The odds ratio compares forgetting on stimulated '
+            'IED-positive trials whose IED fell in the During-Stim window vs. '
+            "the same group's stimulated IED trials whose IED fell only in other "
+            'time windows (the reference). Odds ratios above 1 mean During-Stim '
+            'IEDs are forgotten more often.'
+        )
+
+        def _fmt_p(v):
+            # APA: no leading zero; clamp the degenerate 1.000 to .999.
+            if v < 0.001:
+                return '<.001'
+            s = f'{v:.3f}'
+            if s == '1.000':
+                s = '.999'
+            return s[1:] if s.startswith('0.') else s
+
+        def _fmt_z(v):
+            return '0.00' if abs(v) < 0.005 else f'{v:.2f}'
+
+        headers_i = ['Predictor', 'OR', '95% CI', 'z', 'p', 'FDR q']
+        italics_i = [False, False, False, False, False, False]
+        widths_i = [46, 18, 42, 18, 22, 22]
+        aligns_i = ['L', 'C', 'C', 'C', 'C', 'C']
+        rows_i = []
+        for _, r in contrasts.iterrows():
+            rows_i.append({
+                'Predictor': r['Group'],
+                'OR': f"{r['OR']:.2f}",
+                '95% CI': f"[{r['CI_low']:.2f}, {r['CI_high']:.2f}]",
+                'z': _fmt_z(r['z']),
+                'p': _fmt_p(r['p']),
+                'FDR q': _fmt_p(r['q_fdr']),
+            })
+
+        apa_table(pdf,
+            title_text=('Within-group During-Stimulation vs. other-window '
+                        'forgetting contrasts (patient-clustered binomial GEE).'),
+            note_text=(f'Model fit on {n_trials} stimulated IED-positive trials '
+                       f'from {n_pats} patients. Reference within each group = '
+                       'stimulated IED trials whose IED fell only in other time '
+                       'windows (during_stim = 0); OR > 1 = more forgetting on '
+                       'During-Stim-window IED trials. Strong responders is the '
+                       'modeling reference group for the underlying interaction '
+                       'terms. p = two-sided Wald; FDR q = Benjamini-Hochberg '
+                       'across the four groups.'),
+            header_labels=headers_i, header_italic_mask=italics_i,
+            widths=widths_i, row_dicts=rows_i, row_aligns=aligns_i)
+    else:
+        pdf.body(
+            'Inferential contrasts CSV not found. Run '
+            'compute_during_stim_within_group_contrasts.py (anaconda env) to '
+            'generate during_stim_within_group_contrasts_fdr.csv, then rebuild '
+            'this report.'
+        )
 
     # ============== Analysis B ==============
     pdf.add_page()
@@ -747,16 +824,24 @@ def main():
         '6 split the same trials by memory outcome.'
     )
 
+    # Shorten the region headers so they fit/read (data keys stay as REGION_BUCKETS).
+    REGION_LABELS = {
+        'Hippocampus only': 'HPC only',
+        'Amygdala only': 'AMYG only',
+        'HPC+Amyg': 'HPC+AMYG',
+        'Other only': 'Other only',
+    }
+
     def _region_rows(rt):
         out = []
         for _, r in rt.iterrows():
             row = {'Group': r['responder_status'], 'n trials': int(r['n_trials'])}
             for b in REGION_BUCKETS:
-                row[b] = int(r[b])
+                row[REGION_LABELS[b]] = int(r[b])
             out.append(row)
         return out
 
-    headers_r = ['Group', 'n trials'] + REGION_BUCKETS
+    headers_r = ['Group', 'n trials'] + [REGION_LABELS[b] for b in REGION_BUCKETS]
     italics_r = [False, True, False, False, False, False]
     widths_r  = [40, 18, 28, 24, 22, 28]
     aligns_r  = ['L', 'R', 'R', 'R', 'R', 'R']

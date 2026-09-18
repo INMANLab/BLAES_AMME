@@ -43,7 +43,7 @@ ALLHPC_PAIR_SOURCES <- list(
 # HippSubRhinal (no BLA, no ALLHPC in HippSubRhinal, EC_PRC only in HPCrhinal).
 SCOPE_POWER <- list(
   HPCrhinal     = c("ALLHPC", "EC", "PRC"),
-  HippSubRhinal = c("CA", "DG", "HPC", "EC", "PRC")
+  HippSubRhinal = c("CA", "DG", "HPC")
 )
 SCOPE_COH <- list(
   HPCrhinal     = c("ALLHPC_EC", "ALLHPC_PRC", "EC_PRC"),

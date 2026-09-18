@@ -36,9 +36,9 @@ from scipy.stats import chi2_contingency
 warnings.filterwarnings('ignore')
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-ENCODING_CSV = os.path.join(SCRIPT_DIR, 'IED',
+ENCODING_CSV = os.path.join(SCRIPT_DIR,
                             'AMMEBLAES_IEDs_trial_level_dissertation_study_usethis_cleaned_with_memory.csv')
-RETRIEVAL_CSV = os.path.join(SCRIPT_DIR, 'IED',
+RETRIEVAL_CSV = os.path.join(SCRIPT_DIR,
                              'AMMEBLAES_IEDs_trial_level_dissertation_test_usethis_cleaned_with_memory.csv')
 OUTPUT_DIR = os.path.join(SCRIPT_DIR, 'outputs', 'ied_timing_memory')
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -267,7 +267,8 @@ def plot_by_subject(trial_level, timing_cols, timing_labels, phase_label, filena
 
 def plot_stacked_memory(trial_level, timing_cols, timing_labels, phase_label, filename):
     """Stacked bar: remembered vs forgotten counts for each timing window."""
-    fig, ax = plt.subplots(figsize=(max(8, len(timing_cols) * 2.5), 7))
+    REM_C, FORG_C = '#FFD43B', '#9C7AC9'  # match the other IED rem/forgotten figures
+    fig, ax = plt.subplots(figsize=(max(6.5, len(timing_cols) * 2.1), 6.5))
     x = np.arange(len(timing_cols))
     bar_width = 0.35
 
@@ -280,33 +281,36 @@ def plot_stacked_memory(trial_level, timing_cols, timing_labels, phase_label, fi
             forg_counts.append((sub['MemoryOutcome'] == 'forgotten').sum())
 
         ax.bar(x + offset, rem_counts, bar_width,
-               color=REMEMBERED_COLOR, edgecolor='black', linewidth=0.6,
+               color=REM_C, edgecolor='black', linewidth=0.6,
                label='Remembered' if offset < 0 else '')
         ax.bar(x + offset, forg_counts, bar_width, bottom=rem_counts,
-               color=FORGOTTEN_COLOR, edgecolor='black', linewidth=0.6,
+               color=FORG_C, edgecolor='black', linewidth=0.6,
                label='Forgotten' if offset < 0 else '')
 
     for i in range(len(timing_cols)):
-        ax.text(x[i] - bar_width / 2, -0.03, 'Present', ha='center', va='top',
-                fontsize=8, fontstyle='italic',
+        ax.text(x[i] - bar_width / 2, -0.02, 'Present', ha='center', va='top',
+                fontsize=10, fontweight='bold', rotation=90,
                 transform=ax.get_xaxis_transform())
-        ax.text(x[i] + bar_width / 2, -0.03, 'Absent', ha='center', va='top',
-                fontsize=8, fontstyle='italic',
+        ax.text(x[i] + bar_width / 2, -0.02, 'Absent', ha='center', va='top',
+                fontsize=10, fontweight='bold', rotation=90,
                 transform=ax.get_xaxis_transform())
 
     ax.set_xticks(x)
-    ax.set_xticklabels([timing_labels[c] for c in timing_cols], fontsize=13)
-    ax.tick_params(axis='x', pad=18)
-    ax.set_ylabel('Number of Trials', fontsize=15)
-    ax.set_title(f'{phase_label}: Remembered vs Forgotten Trial Counts',
-                 fontsize=17, fontweight='bold')
-    ax.legend(fontsize=12, frameon=True)
+    ax.set_xticklabels([timing_labels[c] for c in timing_cols], fontsize=15, fontweight='bold')
+    ax.tick_params(axis='x', pad=52)
+    ax.set_ylabel('Number of Trials', fontsize=16, fontweight='bold')
+    ax.set_title(phase_label.replace(' Phase', ''), fontsize=19, fontweight='bold')
+    ax.legend(frameon=True, prop={'weight': 'bold', 'size': 14})
     sns.despine(ax=ax)
-    ax.tick_params(axis='y', labelsize=12)
+    plt.setp(ax.get_yticklabels(), fontsize=13, fontweight='bold')
     fig.tight_layout()
 
     out = os.path.join(OUTPUT_DIR, filename)
     fig.savefig(out, dpi=300, bbox_inches='tight')
+    # also write into the consolidated updated_IED_figures folder
+    updated_dir = os.path.join(SCRIPT_DIR, '..', 'OUTPUTS', 'updated_IED_figures')
+    os.makedirs(updated_dir, exist_ok=True)
+    fig.savefig(os.path.join(updated_dir, filename), dpi=300, bbox_inches='tight')
     plt.close(fig)
     print(f'Saved {out}')
 

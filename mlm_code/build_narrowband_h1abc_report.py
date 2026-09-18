@@ -47,8 +47,8 @@ FAMILY_DIR = os.path.join(OUT_DIR, "stats",
 os.makedirs(FAMILY_DIR, exist_ok=True)
 
 SCOPE_LABELS = {
-    "BLAMTL":        "BLA-MTL (uses ALLHPC)",
-    "HPCrhinal":     "HPC-rhinal (uses ALLHPC)",
+    "BLAMTL":        "BLA-MTL (uses HPC)",
+    "HPCrhinal":     "HPC-rhinal (uses HPC)",
     "HippSubBLA":    "Hippocampal subregions vs BLA",
     "HippSubRhinal": "Hippocampal subregions vs rhinal cortices",
 }
@@ -145,7 +145,16 @@ def fmt_fit(v, decimals=2):
 
 
 def display_unit(u):
-    return u.replace("_", "-")
+    # ALLHPC = macro hippocampus -> "HPC"; HPC region = subiculum -> "SUB"
+    parts = []
+    for p in str(u).split("_"):
+        if p == "ALLHPC":
+            parts.append("HPC")
+        elif p == "HPC":
+            parts.append("SUB")
+        else:
+            parts.append(p)
+    return "-".join(parts)
 
 
 def pretty_term(term):

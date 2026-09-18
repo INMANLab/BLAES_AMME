@@ -44,11 +44,7 @@ for _a in _raw_args:
     if _a.startswith("--region-group="):
         REGION_GROUP = _a.split("=", 1)[1]
 assert REGION_GROUP in (None, "mainregions", "mainregions_nobla",
-                        "hippsubregions")
-if REGION_GROUP and (BALANCED or ONESEC or NO_BLA):
-    raise SystemExit(
-        "--region-group is only supported for the vanilla branch "
-        "(no --balanced, --onesec, or --no-bla)")
+                        "hippsubregions", "hippsubregions_nobla")
 _pos_args = [a for a in _raw_args
              if not a.startswith("--") and "=" not in a]
 
@@ -77,6 +73,9 @@ def in_region_group(region, group):
         return all(p in MAIN_REGIONS_NOBLA for p in parts)
     if group == "hippsubregions":
         return any(p in HIPPSUB_REGIONS for p in parts)
+    if group == "hippsubregions_nobla":
+        return (any(p in HIPPSUB_REGIONS for p in parts)
+                and "BLA" not in parts)
     return True
 
 N_PERMUTATIONS = 5000
@@ -251,17 +250,15 @@ def run_modality(modality):
     n = len(panel_results)
     panel_xlim = (30.0, float(freqs.max())) if modality == "pac" else None
 
-    if REGION_GROUP:
+    if REGION_GROUP or BALANCED or ONESEC:
+        # Compact gap-free grid for filtered subsets (region groups) and for
+        # the balanced / onesec figures, which otherwise leave whole columns
+        # of the fixed anatomical layout empty. Near-square, filled row-major
+        # so the only blanks are trailing cells in the last row (no interior
+        # gap, and no prime-count single-row strips).
         nP = n
-        best = None
-        for nc in range(1, nP + 1):
-            nr = int(np.ceil(nP / nc))
-            empty = nr * nc - nP
-            aspect = max(nr, nc) / max(min(nr, nc), 1)
-            score = (empty, aspect, -nc)
-            if best is None or score < best[0]:
-                best = (score, nr, nc)
-        _, nrows, ncols = best
+        ncols = int(np.ceil(np.sqrt(nP)))
+        nrows = int(np.ceil(nP / ncols))
         fig, axes = plt.subplots(nrows, ncols,
                                  figsize=(ncols * 4.0, nrows * 3.0 + 1.0),
                                  squeeze=False)

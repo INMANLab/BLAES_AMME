@@ -10,7 +10,7 @@ restricts AMME stim trials to the one-second-stim subset:
     retrieval stim trials: keep only trial_type == "After stim"
     drop "Before stim" and "During stim" everywhere.
 
-  AMME Duration patients (amyg030, 033, 034):
+  AMME Duration patients (amyg030, 033, 034, 037):
     encoding: keep stimulation in {0, 1}; drop stimulation == 3 (3-sec stim)
     retrieval: keep trial_type in {"nostim", "1s stim"}; drop "3s stim"
 
@@ -63,7 +63,7 @@ SUMMARY_OUTPUT_PATH = os.path.join(OUTPUT_ROOT, 'onesecstim_conditions_summary.t
 
 # AMME cohort definitions (mirrors permutation/build_onesec_filtered_csvs.py).
 AMME_TIMING = [f'amyg{n:03d}' for n in (45, 46, 48, 54, 57, 59, 61, 66, 72)]
-AMME_DURATION = ['amyg030', 'amyg033', 'amyg034']
+AMME_DURATION = ['amyg030', 'amyg033', 'amyg034', 'amyg037']
 AMME_ALL = set(AMME_TIMING + AMME_DURATION)
 
 # Region exclusion list — applied to every output. MTL, PHG and any PNAS

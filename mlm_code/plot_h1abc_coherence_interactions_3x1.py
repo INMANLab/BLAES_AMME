@@ -31,6 +31,19 @@ ALLHPC_SOURCES = ("BLA_HPC", "BLA_CA", "BLA_DG")
 COND_COLOR = {"nostim": "#1f77b4", "stim": "#d62728"}
 COND_LABEL = {"nostim": "No stim", "stim": "Stim"}
 
+
+def pretty_label(name):
+    # ALLHPC = macro hippocampus -> "HPC"; HPC region = subiculum -> "SUB"
+    parts = []
+    for p in str(name).split("_"):
+        if p == "ALLHPC":
+            parts.append("HPC")
+        elif p == "HPC":
+            parts.append("SUB")
+        else:
+            parts.append(p)
+    return "-".join(parts)
+
 # Order requested: BLA-ALLHPC, BLA-EC, BLA-PRC. p_raw / q_FDR pulled from
 # fdr_coherence_BLAMTL_GLMM_retrieval/coherence_BLAMTL_GLMM_*.csv
 THETA_PANELS = [
@@ -86,7 +99,7 @@ def draw_panel(ax, pair, band_name, band_label, p_raw, q_fdr, mark_star):
 
     n_trials = len(df)
     n_subjects = int(df["Patient"].nunique())
-    pair_pretty = pair.replace("_", "-")
+    pair_pretty = pretty_label(pair)
 
     for cond in ["nostim", "stim"]:
         sub = pred[pred["stim"] == cond]

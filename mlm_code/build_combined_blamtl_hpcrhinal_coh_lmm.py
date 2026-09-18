@@ -98,16 +98,19 @@ def main():
 
     fig.suptitle(
         f"BLAMTL + HPCrhinal - Coherence - {MODELTYPE_TITLES[modeltype]} at {phase}",
-        fontsize=13,
+        fontsize=13, y=0.985, fontweight="bold",
     )
-    fig.supxlabel(MODELTYPE_XLABEL[modeltype], fontsize=20, fontweight="bold")
-    fig.supylabel("Band-averaged coherence", fontsize=20, fontweight="bold")
-    fig.tight_layout(rect=[0.02, 0.03, 1, 0.96])
+    fig.subplots_adjust(left=0.07, right=0.99, bottom=0.07, top=0.91,
+                        wspace=0.22, hspace=0.35)
+    fig.supxlabel(MODELTYPE_XLABEL[modeltype], fontsize=12, fontweight="bold",
+                  y=0.018)
+    fig.supylabel("Band-averaged coherence", fontsize=12, fontweight="bold",
+                  x=0.012)
 
     out_dir = os.path.join(h1f.OUT_FIG_ROOT, "BLAMTL_HPCrhinal_coherence_combined")
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, f"BLAMTL_HPCrhinal_coherence_{modeltype}_combined.png")
-    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    fig.savefig(out_path, dpi=300, bbox_inches="tight", pad_inches=0.05)
     plt.close(fig)
     print(f"Saved: {out_path}")
 

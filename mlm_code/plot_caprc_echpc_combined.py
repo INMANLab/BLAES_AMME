@@ -28,8 +28,8 @@ PANELS = [
     },
     {
         "pair": "EC_HPC",
-        "label": "EC-HPC",
-        "focus_label": "EC-HPC slow gamma coherence",
+        "label": "EC-SUB",
+        "focus_label": "EC-SUB slow gamma coherence",
         "interaction_p": 0.008,
     },
 ]

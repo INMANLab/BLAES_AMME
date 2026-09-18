@@ -104,7 +104,16 @@ OUTPUT_PDF = os.path.join(
 # ---------------------------------------------------------------------------
 
 def display_region(r):
-    return r.replace("_", "-")
+    # ALLHPC = macro hippocampus -> "HPC"; HPC region = subiculum -> "SUB"
+    parts = []
+    for p in str(r).split("_"):
+        if p == "ALLHPC":
+            parts.append("HPC")
+        elif p == "HPC":
+            parts.append("SUB")
+        else:
+            parts.append(p)
+    return "-".join(parts)
 
 
 def num_str(v, decimals=4):

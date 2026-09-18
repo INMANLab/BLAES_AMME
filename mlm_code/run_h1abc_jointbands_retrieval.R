@@ -75,9 +75,10 @@ SCOPES <- list(
     needs_allhpc  = FALSE
   ),
   HippSubRhinal = list(
-    power_regions = c("CA", "DG", "HPC", "EC", "PRC"),
-    coh_pairs     = c("CA_EC", "DG_EC", "EC_HPC", "CA_PRC", "DG_PRC",
-                      "HPC_PRC", "EC_PRC"),
+    # EC, PRC power and EC_PRC pairs belong to HPCrhinal only.
+    # ALLHPC pairs are never used here (subregions only).
+    power_regions = c("CA", "DG", "HPC"),
+    coh_pairs     = c("CA_EC", "DG_EC", "EC_HPC", "CA_PRC", "DG_PRC", "HPC_PRC"),
     needs_allhpc  = FALSE
   )
 )

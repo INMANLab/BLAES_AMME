@@ -2009,16 +2009,21 @@ def plot_coherence_by_roi_core(data, out_dir, label):
     if not core_rois:
         return
     roi_colors = make_roi_color_map(core_rois)
+
+    def _display(r):
+        parts = str(r).split('_')
+        return '_'.join('SUB' if p == 'HPC' else p for p in parts)
+
     fig, ax = plt.subplots(figsize=(12, 8))
     for roi in core_rois:
         mat = np.array(list(gap[roi].values()), dtype=np.float64)
         mean, std = mat.mean(0), mat.std(0)
         c = roi_colors[roi]
-        ax.plot(freqs, mean, color=c, label=f'{roi} ({mat.shape[0]})')
+        ax.plot(freqs, mean, color=c, label=f'{_display(roi)} ({mat.shape[0]})')
         ax.fill_between(freqs, mean - std, mean + std, alpha=0.2, color=c)
     ax.set_xlabel('Frequency (Hz)', fontsize=18, fontweight='bold')
     ax.set_ylabel('Coherence (Fisher Z)', fontsize=18, fontweight='bold')
-    ax.set_title(f'{label} Retrieval Group Coherency by ROI (Core Regions)', fontsize=20, fontweight='bold')
+    ax.set_title(f'{label} Retrieval Group Coherency by ROI (Hipp Subregions)', fontsize=20, fontweight='bold')
     ax.tick_params(axis='both', labelsize=14)
     ax.legend(bbox_to_anchor=(1.02, 0.5), loc='center left', prop={'weight': 'bold', 'size': 12})
     plt.tight_layout(rect=[0, 0, 0.85, 1])
